@@ -103,7 +103,7 @@ def fetch_eia_series(c: Contract, api_key: str, cache_dir: Path) -> pd.DataFrame
     return df
 
 
-def fetch_yahoo_daily(c: Contract, cache_dir: Path, rng: str = "5y") -> pd.DataFrame:
+def fetch_yahoo_daily(c: Contract, cache_dir: Path, rng: str = "10y") -> pd.DataFrame:
     def _fetch():
         r = httpx.get(
             YAHOO_CHART_URL.format(symbol=c.yahoo),

@@ -15,7 +15,7 @@ import pandas as pd
 
 from ..universe import Contract
 
-HISTORY_DAYS = 1050  # ~4 years of business days
+HISTORY_DAYS = 2600  # ~10 years of business days (enough for backtests)
 
 
 def _rng(seed: int, *keys: str) -> np.random.Generator:
@@ -65,9 +65,12 @@ def daily_history(c: Contract, seed: int, today: date | None = None) -> pd.DataF
     log_p = np.empty(n)
     log_p[0] = np.log(c.sim_price)
     anchor = log_p[0]
+    base = log_p[0]
     for i in range(1, n):
-        anchor += drift[i] * 0.5
-        mr = -0.01 * (log_p[i - 1] - anchor - season[i - 1])
+        # the "fair value" anchor trends in regimes but is itself pulled back towards a
+        # long-run level (cost of production), so 10-year ranges stay realistic (~2-4x)
+        anchor += drift[i] * 0.5 - 0.004 * (anchor - base)
+        mr = -0.015 * (log_p[i - 1] - anchor - season[i - 1])
         log_p[i] = log_p[i - 1] + drift[i] + mr + shocks[i] + (season[i] - season[i - 1])
     # Rescale so the latest close sits near the configured level
     log_p += np.log(c.sim_price) - log_p[-1]
@@ -89,7 +92,7 @@ def daily_history(c: Contract, seed: int, today: date | None = None) -> pd.DataF
     second = close * (1 + spread_pct)
 
     tick = c.tick_size
-    rnd = lambda a: np.round(a / tick) * tick  # noqa: E731
+    rnd = lambda a: np.round(np.round(a / tick) * tick, 6)  # noqa: E731
     return pd.DataFrame(
         {
             "date": dates,

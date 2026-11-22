@@ -439,10 +439,11 @@ const VIEWS = {
     const cmds = [
       ["CL", "Load a security (any root: CL NG RB HO GC SI HG PL ZC ZS ZW KC SB CC CT LE HE MCL MGC)"],
       ["CL COT / CL SD / CL FCST / CL MON", "Load security into a function screen"],
-      ["COT · SD · FCST · SIG · PROP · ALRT · MON", "Open a function screen (or F1–F8)"],
+      ["COT · SD · FCST · SIG · PROP · ALRT · MON · BT", "Open a function screen (or F1–F9)"],
       ["BUY 2 MCL / SELL 1 CL", "Paper market order with the ticket's stop/target ticks, after prop rule checks"],
       ["ALRT CL > 70 / ALRT NG SWING < -50", "Create a custom alert (field defaults to LAST)"],
       ["FLAT", "Flatten all paper positions"],
+      ["BT / BACKTEST (F9)", "Backtest lab: run, compare, optimise, walk-forward, Monte Carlo"],
       ["↑ / ↓", "Move through the monitor"],
     ];
     v.innerHTML = `<div class="pad help"><table class="tbl"><tbody>${cmds.map(([c, d]) => `<tr><td><code>${c}</code></td><td>${d}</td></tr>`).join("")}</tbody></table>
@@ -457,6 +458,7 @@ const VIEWS = {
 async function renderView() {
   destroyCharts();
   document.querySelectorAll("#fkeys button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.view));
+  document.body.classList.toggle("wide", S.view === "BT"); // the lab uses the detail column too
   const v = $("#view");
   v.innerHTML = "";
   try {
@@ -549,7 +551,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);
@@ -682,7 +684,7 @@ document.addEventListener("click", async (ev) => {
   if (t.dataset.sym && t.dataset.sym !== "PROP" && S.universe[t.dataset.sym]) return select(t.dataset.sym, t.dataset.view || undefined);
 });
 document.addEventListener("keydown", (ev) => {
-  const fmap = { F1: "MON", F2: "COT", F3: "SD", F4: "FCST", F5: "SIG", F6: "PROP", F7: "ALRT", F8: "HELP" };
+  const fmap = { F1: "MON", F2: "COT", F3: "SD", F4: "FCST", F5: "SIG", F6: "PROP", F7: "ALRT", F8: "HELP", F9: "BT" };
   if (fmap[ev.key]) { ev.preventDefault(); S.view = fmap[ev.key]; return renderView(); }
   const inInput = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName);
   if (!inInput && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) {

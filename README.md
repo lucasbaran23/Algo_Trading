@@ -39,9 +39,10 @@ Run the tests with `cd backend && python -m pytest -q`.
 | F6 | PROP DESK | Rule editor and presets, drawdown/daily-loss/target meters, risk sizer, bracket order ticket, positions, trade log |
 | F7 | ALERTS | Built-in triggers plus custom rules |
 | F8 | HELP | Commands and methodology |
+| F9 | BACKTEST LAB | Run, compare, optimise, walk-forward and Monte Carlo strategies, with a prop-evaluation simulator |
 
 Command line examples: `CL`, `NG COT`, `GC FCST`, `BUY 2 MCL`, `SELL 1 CL`, `ALRT CL > 70`,
-`ALRT NG SWING < -50`, `FLAT`.
+`ALRT NG SWING < -50`, `FLAT`, `BT`.
 
 **Universe:** CL NG RB HO · GC SI HG PL · ZC ZS ZW · KC SB CC CT · LE HE · MCL MGC (micros map to their parent's data).
 
@@ -87,11 +88,49 @@ Brokers (`backend/app/prop/brokers.py`):
 Live routing stays disabled until `LIVE_TRADING_ENABLED=true`. Presets are generic templates. Users must
 enter their own firm's current rules.
 
+## Backtest lab (F9)
+
+**Strategies.** Each strategy declares its parameters, so the UI builds the input form and the
+optimisation grid automatically. Every strategy can be set to long/short, long-only or short-only.
+
+| Family | Strategies |
+|---|---|
+| Trend | MA crossover · Donchian breakout (turtle) · Time-series momentum |
+| Mean reversion | RSI reversion · Bollinger band reversion |
+| Quantamental | COT contrarian · Trend + COT crowding filter · Inventory supply/demand (energy) |
+
+**Execution model.**
+* A signal at a bar's close is filled at the **next bar's open**, so there is no look-ahead.
+* Commission and slippage (in ticks) are charged per contract per side.
+* Optional ATR stop-loss and take-profit. A gap through a level fills at the open, and there is no
+  instant re-entry after a stop.
+* Sizing is fixed contracts, or risk-based (account × risk% ÷ (ATR × $/pt)) with a cap.
+* COT data is usable from its Friday release. EIA data is usable from the Wednesday after the week it covers.
+
+**Tools.**
+* **Run:** equity vs buy & hold, drawdown, full metrics (Sharpe, Sortino, Calmar, profit factor, win
+  rate, exposure…), trade list, monthly P&L heatmap.
+* **Prop evaluation simulator:** starts a new evaluation every 5 days and replays the strategy through
+  the chosen firm rules. Reports pass %, the fail split (drawdown vs daily loss), timeouts and median
+  days to pass.
+* **Compare:** overlays up to 3 earlier runs.
+* **Optimise:** grid search of up to 600 combinations over any parameters, with an out-of-sample holdout.
+  It shows the top results, a 2-D heatmap, and overfitting diagnostics: in-sample/out-of-sample rank
+  correlation, share of profitable combinations, and the best combination's out-of-sample/in-sample ratio.
+  Click a row to load and run it.
+* **Walk-forward:** rolling or anchored. Re-optimises on each training window and trades the winner on
+  the next unseen window. Reports the stitched out-of-sample equity, WF efficiency and parameter stability.
+* **Monte Carlo:** resamples the trade sequence to give final P&L and max-drawdown percentiles, plus
+  the probability of breaching the prop account's max drawdown.
+
+To add a strategy, write a single function plus one `Strategy(...)` entry in `backend/app/backtest/strategies.py`.
+The UI picks it up automatically.
+
 ## API
 
 REST: `/api/watchlist`, `/api/snapshot/{sym}`, `/api/history/{sym}`, `/api/intraday/{sym}`, `/api/cot[/{sym}]`,
 `/api/supply-demand`, `/api/matrix`, `/api/alerts[/rules]`, `/api/prop[/presets|/rules|/reset|/size|/flatten]`,
-`/api/orders`.
+`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`.
 
 WebSocket: `/ws` streams `tick`, `signals`, `alert` and `fill` messages. Interactive docs are at `/docs`.
 
@@ -103,6 +142,7 @@ backend/app/
   data/sim.py, live.py, store.py simulator, CFTC/EIA/Yahoo adapters, in-memory market hub
   signals/quant.py, fundamental.py, forecast.py, engine.py
   alerts.py                     built-in + user rules, dedup/cooldown
+  backtest/strategies.py, engine.py  strategy library; simulator, metrics, optimiser, walk-forward, Monte Carlo
   prop/rules.py, brokers.py     prop rule engine, paper/Tradovate/ProjectX adapters
   main.py                       FastAPI REST + WebSocket, background tick & signal loops
 backend/tests/                  signals, prop rules, brackets, alerts, API end-to-end
@@ -129,5 +169,6 @@ frontend/                       vanilla JS terminal UI + vendored TradingView Li
 * USDA WASDE / Crop Progress, LME/COMEX warehouse stocks: S&D for metals, grains and softs
 * Economic and report calendar (EIA, WASDE, COT, FOMC) with news-blackout rules for prop accounts
 * Users, auth, subscriptions (Stripe), per-user alert delivery (email, Telegram, Discord, push)
-* Persistent storage (Postgres/Timescale) and a backtest screen for each signal
+* Persistent storage (Postgres/Timescale), saved backtests and shareable strategy reports
+* Portfolio backtests (one strategy across many markets), intraday-bar backtests, custom strategy builder
 * Multi-account prop dashboard (copy-trading across evaluations), payout tracker

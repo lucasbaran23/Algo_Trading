@@ -44,7 +44,8 @@ def test_supply_demand_tight_market_is_bullish():
     c = universe.get("CL")
     px = sim.daily_history(c, 1)
     inv = sim.inventory_history(c, px, 1)
-    inv.loc[inv.index[-1], "stocks"] *= 0.8   # big draw -> well below 5y norm
+    norm = fundamental.supply_demand_signals(inv)["five_yr_avg"]
+    inv.loc[inv.index[-1], "stocks"] = 0.8 * norm   # force stocks well below the 5y norm
     out = fundamental.supply_demand_signals(inv)
     assert out["dev_z"] < 0 and out["score"] > 0 and out["balance"] == "TIGHT"
     assert all("norm" in h for h in out["history"])

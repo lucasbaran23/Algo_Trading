@@ -172,3 +172,31 @@ button, input, select { font: inherit; color: inherit; }
   .grid { padding: 3px 16px; }
   .foot .muted { display: none; }
 }
+
+/* ---------- backtest lab ---------- */
+body.wide .grid { grid-template-areas: "mon center center" "alerts alerts prop"; }
+body.wide .detail { display: none; }
+.bt-config { display: grid; grid-template-columns: 1.1fr 1fr; gap: 8px; padding: 8px; }
+.bt-params td { padding: 2px 4px; }
+.bt-params input, .bt-params select { width: 100%; min-width: 56px; background: var(--bg); border: 1px solid var(--line); color: var(--amber); padding: 2px 4px; }
+.bt-params input:disabled { color: var(--muted); opacity: .5; }
+.bt-params td:first-child { color: var(--ink-2); }
+label.opt { display: flex; gap: 4px; align-items: center; color: var(--ink-2); cursor: pointer; }
+.bt-results { padding: 0 8px 8px; display: flex; flex-direction: column; gap: 8px; }
+.bt-body { display: flex; flex-direction: column; gap: 8px; }
+.tabs { display: flex; gap: 3px; flex-wrap: wrap; border-bottom: 1px solid var(--amber-dim); padding-bottom: 4px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 4px; margin: 4px 0; }
+.tile { background: #090b0e; border: 1px solid var(--line); padding: 4px 8px; display: flex; flex-direction: column; }
+.tile span { color: var(--ink-2); font-size: 11px; }
+.tile b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.stack { display: flex; height: 12px; gap: 2px; margin: 6px 0; background: var(--surface-2); }
+.stack i { display: block; height: 100%; }
+.na-fill { background: #4a4f57; }
+.sw { display: inline-block; width: 9px; height: 9px; margin-right: 6px; vertical-align: middle; }
+.heat td { text-align: center; min-width: 46px; }
+.heat td.best { outline: 2px solid var(--amber); outline-offset: -2px; font-weight: 700; }
+.fan { width: 100%; height: 220px; background: #090b0e; border: 1px solid var(--line); margin: 6px 0; }
+@media (max-width: 1100px) {
+  body.wide .grid { grid-template-areas: "center" "mon" "prop" "alerts"; }
+  .bt-config { grid-template-columns: 1fr; }
+}

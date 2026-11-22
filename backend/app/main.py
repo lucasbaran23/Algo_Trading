@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 
 from . import universe
 from .alerts import AlertEngine, UserRule
+from .backtest import engine as bt
+from .backtest.strategies import STRATEGIES
 from .config import settings
 from .data.store import MarketData
 from .prop.brokers import Order, PaperBroker, make_live_adapter
@@ -412,6 +414,82 @@ async def flatten():
         if p.qty:
             hub.paper.place(Order(sym, -p.qty))
     return await prop_status()
+
+
+# ---------------------------------------------------------------------- backtest lab
+# Plain `def` endpoints: FastAPI runs them in a worker thread so heavy optimisations
+# never stall the live tick/alert loops. They only read the loaded history.
+class BacktestIn(BaseModel):
+    symbol: str = "CL"
+    strategy: str = "sma_cross"
+    params: dict = Field(default_factory=dict)
+    sizing: str = "fixed"
+    contracts: int = Field(default=1, ge=1, le=100)
+    risk_pct: float = Field(default=0.5, gt=0, le=10)
+    max_contracts: int = Field(default=10, ge=1, le=500)
+    account_size: float = Field(default=50_000, gt=0)
+    commission: float = Field(default=2.5, ge=0)
+    slippage_ticks: float = Field(default=1.0, ge=0)
+    stop_atr: float = Field(default=0.0, ge=0)
+    target_atr: float = Field(default=0.0, ge=0)
+    start: str | None = None
+    end: str | None = None
+    prop_preset: str | None = "eval_50k_eod"
+    # optimisation / walk-forward / monte carlo
+    ranges: dict = Field(default_factory=dict)
+    objective: str = "sharpe"
+    oos_pct: float = Field(default=30, ge=0, lt=90)
+    train_days: int = Field(default=504, ge=60)
+    test_days: int = Field(default=126, ge=20)
+    anchored: bool = False
+    n_sims: int = Field(default=1000, ge=100, le=10_000)
+
+    def cfg(self) -> bt.RunConfig:
+        _sym(self.symbol)
+        return bt.RunConfig(**{k: getattr(self, k) for k in bt.RunConfig.__dataclass_fields__})
+
+    def rules(self) -> PropRules | None:
+        return PropRules(**PRESETS[self.prop_preset].to_dict()) if self.prop_preset in PRESETS else None
+
+
+def _bt(fn):
+    try:
+        return _clean(fn())
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(400, str(exc).strip("'\"")) from exc
+
+
+@app.get("/api/backtest/strategies")
+def bt_strategies():
+    return [s.spec() for s in STRATEGIES.values()]
+
+
+@app.post("/api/backtest/run")
+def bt_run(body: BacktestIn):
+    return _bt(lambda: bt.run(hub.md, body.cfg(), body.rules()))
+
+
+@app.post("/api/backtest/optimize")
+def bt_optimize(body: BacktestIn):
+    if not body.ranges:
+        raise HTTPException(400, "Tick at least one parameter to optimise.")
+    return _bt(lambda: bt.optimize(hub.md, body.cfg(), body.ranges, body.objective, body.oos_pct))
+
+
+@app.post("/api/backtest/walkforward")
+def bt_walkforward(body: BacktestIn):
+    if not body.ranges:
+        raise HTTPException(400, "Tick at least one parameter to optimise.")
+    return _bt(lambda: bt.walk_forward(hub.md, body.cfg(), body.ranges, body.objective,
+                                       body.train_days, body.test_days, body.anchored))
+
+
+@app.post("/api/backtest/montecarlo")
+def bt_montecarlo(body: BacktestIn):
+    def go():
+        res = bt.run(hub.md, body.cfg(), None)
+        return bt.monte_carlo(res["trades"], body.account_size, body.n_sims, body.rules())
+    return _bt(go)
 
 
 # ---------------------------------------------------------------------- websocket & static

@@ -121,7 +121,7 @@ def day_trade_levels(df: pd.DataFrame, last: float, vwap: float, tick: float) ->
         "pivot": rnd(p),
         "r1": rnd(2 * p - l), "s1": rnd(2 * p - h),
         "r2": rnd(p + (h - l)), "s2": rnd(p - (h - l)),
-        "prev_high": h, "prev_low": l, "prev_close": c,
+        "prev_high": rnd(h), "prev_low": rnd(l), "prev_close": rnd(c),
         "atr": a,
         "atr_ticks": int(round(a / tick)),
         "vwap": rnd(vwap),
