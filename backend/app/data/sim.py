@@ -47,7 +47,12 @@ def daily_history(c: Contract, seed: int, today: date | None = None) -> pd.DataF
     var = np.empty(n)
     shocks = np.empty(n)
     var[0] = daily_vol**2
-    z = rng.standard_t(df=5, size=n) / np.sqrt(5 / 3)
+    # Overnight (open gap) and intraday moves are drawn independently, as in real markets:
+    # ~30% of daily variance happens overnight, ~70% in the session. The gap therefore tells you
+    # nothing certain about the rest of the day, so neither gap fades nor gap-and-go get a free edge.
+    t5 = lambda: rng.standard_t(df=5, size=n) / np.sqrt(5 / 3)  # noqa: E731
+    z_on, z_id = t5(), t5()
+    z = np.sqrt(0.3) * z_on + np.sqrt(0.7) * z_id
     for i in range(n):
         if i:
             var[i] = omega + alpha * shocks[i - 1] ** 2 + beta * var[i - 1]
@@ -76,7 +81,7 @@ def daily_history(c: Contract, seed: int, today: date | None = None) -> pd.DataF
     log_p += np.log(c.sim_price) - log_p[-1]
     close = np.exp(log_p)
 
-    gap = rng.normal(0, daily_vol * 0.25, n)
+    gap = np.sqrt(var) * np.sqrt(0.3) * z_on
     open_ = np.r_[close[0], close[:-1]] * np.exp(gap)
     rng_hi = np.abs(rng.normal(0, np.sqrt(var) * 0.4, n))
     rng_lo = np.abs(rng.normal(0, np.sqrt(var) * 0.4, n))

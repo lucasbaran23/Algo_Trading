@@ -2,7 +2,7 @@
 "use strict";
 
 const S = {
-  universe: {}, rows: {}, alerts: [], prop: null, sel: "CL", view: "MON",
+  universe: {}, rows: {}, alerts: [], prop: null, sel: "ES", view: "DT", ticketPreset: null,
   snap: null, charts: [], mainSeries: null, chartMode: "D", ws: null, tapeAt: 0,
 };
 const LWC = window.LightweightCharts;
@@ -386,7 +386,11 @@ const VIEWS = {
     const [st, presets] = await Promise.all([api("/api/prop"), api("/api/prop/presets")]);
     S.prop = st;
     const r = st.rules, sym = S.sel, lv = S.snap.levels;
-    const defStop = Math.max(4, Math.round(lv.atr_ticks * 0.2)); // ~20% of daily ATR: intraday stop
+    // A plan loaded from Day-Trade Insider pre-fills the ticket; otherwise default to ~20% of daily ATR
+    const pre = S.ticketPreset;
+    S.ticketPreset = null;
+    const defStop = pre ? pre.stop : Math.max(4, Math.round(lv.atr_ticks * 0.2));
+    const tSym = pre ? pre.symbol : sym;
     v.innerHTML = `<div class="cols">
       <div class="box"><div class="sec">ACCOUNT RULES</div>
         <div class="form">
@@ -406,10 +410,10 @@ const VIEWS = {
       </div>
       <div class="box"><div class="sec">ORDER TICKET <span class="muted">paper · pre-trade rule check</span></div>
         <div class="form">
-          <label>Symbol<select id="t_sym">${Object.keys(S.universe).map((k) => `<option ${k === sym ? "selected" : ""}>${k}</option>`).join("")}</select></label>
-          <label>Qty<input id="t_qty" type="number" min="1" value="1"></label>
+          <label>Symbol<select id="t_sym">${Object.keys(S.universe).map((k) => `<option ${k === tSym ? "selected" : ""}>${k}</option>`).join("")}</select></label>
+          <label>Qty<input id="t_qty" type="number" min="1" value="${pre ? pre.qty : 1}"></label>
           <label>Stop (ticks)<input id="t_stop" type="number" min="1" value="${defStop}"></label>
-          <label>Target (ticks)<input id="t_target" type="number" min="1" value="${defStop * 2}"></label>
+          <label>Target (ticks)<input id="t_target" type="number" min="1" value="${pre ? pre.target : defStop * 2}"></label>
           <label>Risk % of buffer<input id="t_risk" type="number" min="1" max="100" value="20"></label>
           <label>Route<select id="t_route"><option value="paper">PAPER</option><option value="live">LIVE (broker)</option></select></label>
         </div>
@@ -454,6 +458,7 @@ const VIEWS = {
       ["BUY 2 MCL / SELL 1 CL", "Paper market order with the ticket's stop/target ticks, after prop rule checks"],
       ["ALRT CL > 70 / ALRT NG SWING < -50", "Create a custom alert (field defaults to LAST)"],
       ["FLAT", "Flatten all paper positions"],
+      ["DT / INSIDER, CL DT", "Day-Trade Insider: today's game plan, levels, volume profile, regime, catalysts, ranked playbook, risk plan"],
       ["BT / BACKTEST (F9)", "Backtest lab: run, compare, optimise, walk-forward, Monte Carlo"],
       ["NEWS (F10) / CL NEWS", "News feed with LONG/SHORT signal and ★–★★★ importance per market"],
       ["↑ / ↓", "Move through the monitor"],
@@ -470,7 +475,7 @@ const VIEWS = {
 async function renderView() {
   destroyCharts();
   document.querySelectorAll("#fkeys button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.view));
-  document.body.classList.toggle("wide", S.view === "BT"); // the lab uses the detail column too
+  document.body.classList.toggle("wide", S.view === "BT" || S.view === "DT"); // these use the detail column too
   const v = $("#view");
   v.innerHTML = "";
   try {
@@ -563,7 +568,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);
@@ -643,6 +648,9 @@ function onSelectedTick(quotes) {
   if (!q) return;
   const l = $("#dLast"), c = $("#dChg");
   if (l) l.textContent = px(sym, q.last);
+  const dl = $("#dtLast"), dc = $("#dtChg");
+  if (dl) dl.textContent = px(sym, q.last);
+  if (dc) { dc.textContent = `${signed(q.chg, decimals(sym))} (${signed(q.chg_pct, 2)}%)`; dc.className = cls(q.chg); }
   if (c) { c.textContent = `${signed(q.chg, decimals(sym))} (${signed(q.chg_pct, 2)}%)`; c.className = cls(q.chg); }
   if (S.mainSeries && (S.view === "MON" || S.view === "FCST")) {
     const data = S.mainSeries.data();

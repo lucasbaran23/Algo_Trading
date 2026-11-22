@@ -8,7 +8,7 @@ that would breach them.
 
 > Working name. Do a trademark search before you pick the commercial brand.
 
-![Monitor](docs/screenshots/01-monitor-es.png)
+![Day-Trade Insider](docs/screenshots/00-insider-es-top.png)
 
 More screenshots in [`docs/screenshots/`](docs/screenshots): news, COT, signal matrix, prop desk, backtest lab,
 optimiser, the classic theme and mobile.
@@ -39,6 +39,7 @@ Run the tests with `cd backend && python -m pytest -q`.
 
 | Key | Screen | What it shows |
 |---|---|---|
+| ◆ (`DT`) | DAY-TRADE INSIDER | Landing page. Answers "what do I need to know today to day trade this market?": game plan, key levels, volume profile, regime, expected move, catalysts, ranked playbook, risk plan |
 | F1 | MONITOR | Watchlist with swing/day composites, COT index and 5-day up-probability. Daily or 1-min candles with pivots, VWAP and a 20-day forecast cone |
 | F2 | COT | Managed-money vs commercial net positions, COT index with crowded-long/short bands, cross-market table |
 | F3 | SUPPLY/DEMAND | Stocks vs 5-yr same-week average, deviation σ, weekly surprise vs the normal change |
@@ -122,6 +123,54 @@ Brokers (`backend/app/prop/brokers.py`):
 Live routing stays disabled until `LIVE_TRADING_ENABLED=true`. Presets are generic templates. Users must
 enter their own firm's current rules.
 
+## Day-Trade Insider (default screen)
+
+A pre-session briefing for each market, written the way a day trader prepares:
+
+* **Game plan:** 6-7 plain-language bullets covering:
+  * the regime and how to trade it;
+  * the bias versus VWAP and yesterday's range;
+  * the nearest resistance and support (in ticks);
+  * the size of a normal day and how much is already used;
+  * today's catalysts, the best-fit setup, and position size.
+* **Pre-session checklist:** saved per day and market.
+* **Key-level ladder:**
+  * prior-day high/low/settle, today's open/high/low, VWAP and floor pivots;
+  * prior 5-day and 20-day extremes, round numbers;
+  * volume POC and value area.
+
+  Each level shows its distance in ticks and ATR, with the live price marked.
+* **Volume profile:** a composite of 20 sessions with POC, value area (70%), high-volume nodes ("magnets")
+  and low-volume nodes ("fast moves"), plus where price sits relative to value. It is estimated from daily
+  bars; a tick feed gives the true profile.
+* **Regime:** ADX, efficiency ratio and Choppiness Index classify the market as TRENDING, RANGE-BOUND or
+  TRANSITION, with what tends to work in each.
+* **Expected move:**
+  * 20-day average daily range, typical (p50) and big (p80) days;
+  * the share of a normal range already used, and the projected high and low if today is an average day.
+* **Seasonality:** weekday and month behaviour, the next 20 days in prior years, model P(up), COT state.
+* **Catalysts:** the scheduled reports for this market and day (times ET; estimated dates are flagged),
+  U.S. exchange holidays and early closes, and ★★+ news from the last 36 h.
+* **Playbook, ranked for today's regime:** six single-session setups, each with today's exact trigger, stop
+  and target prices, and an ACTIVE / NOT TODAY flag:
+  * prior-day high/low breakout, gap-and-go, trend open-drive;
+  * gap fade, pivot S1/R1 fade, inside-day/NR7 breakout.
+
+  Each is backtested on ~3 years for this market, after costs, split by the regime known before each
+  session. The verdict (PREFERRED / WORKS / MARGINAL / AVOID) requires both profit factor and t-stat.
+  When nothing has an edge, the plan says so: sitting out is a valid call.
+* **Risk plan:**
+  * a size multiplier (cut for high volatility, ★★★ event days and unclear regimes);
+  * a stop of about 25% of the average daily range with a 2R target;
+  * risk per trade of 25% of the remaining daily-loss allowance, in full-size and micro contracts;
+  * a daily stop, max trades, the consistency-rule profit cap, event and time-of-day rules.
+
+  "Load plan into order ticket" pre-fills the prop desk.
+
+The day-trade setups are tested on daily bars with the standard OHLC path model (up days trade
+open→low→high→close, down days open→high→low→close). This is an approximation, so verify a setup on intraday
+data before risking money on it.
+
 ## Backtest lab (F9)
 
 **Strategies.** Each strategy declares its parameters, so the UI builds the input form and the
@@ -164,7 +213,7 @@ The UI picks it up automatically.
 
 REST: `/api/watchlist`, `/api/snapshot/{sym}`, `/api/history/{sym}`, `/api/intraday/{sym}`, `/api/cot[/{sym}]`,
 `/api/supply-demand`, `/api/matrix`, `/api/alerts[/rules]`, `/api/prop[/presets|/rules|/reset|/size|/flatten]`,
-`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`.
+`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`.
 
 WebSocket: `/ws` streams `tick`, `signals`, `alert`, `fill` and `news` messages. Interactive docs are at `/docs`.
 
@@ -176,6 +225,7 @@ backend/app/
   data/sim.py, live.py, store.py simulator, CFTC/EIA/Yahoo adapters, in-memory market hub
   signals/quant.py, fundamental.py, forecast.py, engine.py
   news/feeds.py, classifier.py, llm.py, service.py  RSS + sim feeds, rule & Claude classifiers, scoring
+  daytrade/calendar.py, analytics.py, playbook.py, insider.py  report calendar, regime/profile/ranges, setups, briefing
   alerts.py                     built-in + user rules, dedup/cooldown
   backtest/strategies.py, engine.py  strategy library; simulator, metrics, optimiser, walk-forward, Monte Carlo
   prop/rules.py, brokers.py     prop rule engine, paper/Tradovate/ProjectX adapters

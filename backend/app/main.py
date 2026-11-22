@@ -311,6 +311,14 @@ async def sd_table():
     return _clean(out)
 
 
+# ---------------------------------------------------------------------- day-trade insider
+@app.get("/api/insider/{symbol}")
+def insider(symbol: str):
+    """Pre-session briefing for one market. Plain def: the first call per market backtests the playbook."""
+    from .daytrade import insider as dt
+    return _clean(dt.build(hub, _sym(symbol)))
+
+
 # ---------------------------------------------------------------------- news
 @app.get("/api/news")
 async def news(symbol: str | None = None, min_stars: int = 1, direction: str | None = None, limit: int = 100):
