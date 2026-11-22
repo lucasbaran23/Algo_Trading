@@ -47,8 +47,8 @@ Run the tests with `cd backend && python -m pytest -q`.
 | F6 | PROP DESK | Rule editor and presets, drawdown/daily-loss/target meters, risk sizer, bracket order ticket, positions, trade log |
 | F7 | ALERTS | Built-in triggers plus custom rules |
 | F8 | HELP | Commands and methodology |
-| F10 | NEWS | Market-linked headlines, each tagged LONG/SHORT per market with ★–★★★ importance; per-market news sentiment |
 | F9 | BACKTEST LAB | Run, compare, optimise, walk-forward and Monte Carlo strategies, with a prop-evaluation simulator |
+| F10 | NEWS | Market-linked headlines, each tagged LONG/SHORT per market with ★–★★★ importance; per-market news sentiment |
 
 Command line examples: `CL`, `NG COT`, `GC FCST`, `BUY 2 MCL`, `SELL 1 CL`, `ALRT CL > 70`,
 `ALRT NG SWING < -50`, `FLAT`, `BT`, `NQ NEWS`.
