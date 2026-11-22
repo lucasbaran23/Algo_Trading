@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Commodities Desk Terminal</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">CMDTY<span>//DESK</span></div>
+    <form id="cmdForm" class="cmd" autocomplete="off">
+      <span class="prompt">&gt;</span>
+      <input id="cmd" spellcheck="false" placeholder="CL COT · NG SD · GC FCST · BUY 2 MCL · ALRT CL > 70 · HELP" aria-label="Command line">
+      <button type="submit" class="go">GO</button>
+    </form>
+    <div class="clocks" id="clocks"></div>
+    <div class="status">
+      <span id="modeBadge" class="badge">SIM</span>
+      <span id="connBadge" class="badge bad">OFFLINE</span>
+    </div>
+  </header>
+
+  <div class="tape" aria-hidden="true"><div id="tape" class="tape-inner"></div></div>
+
+  <nav class="fkeys" id="fkeys">
+    <button data-view="MON"><b>F1</b>MONITOR</button>
+    <button data-view="COT"><b>F2</b>COT</button>
+    <button data-view="SD"><b>F3</b>SUPPLY/DEMAND</button>
+    <button data-view="FCST"><b>F4</b>FORECAST</button>
+    <button data-view="SIG"><b>F5</b>SIGNAL MATRIX</button>
+    <button data-view="PROP"><b>F6</b>PROP DESK</button>
+    <button data-view="ALRT"><b>F7</b>ALERTS</button>
+    <button data-view="HELP"><b>F8</b>HELP</button>
+  </nav>
+
+  <main class="grid">
+    <section class="panel monitor">
+      <div class="ph">MONITOR <span class="muted">click a row · ↑↓ to move</span></div>
+      <div class="scroll"><table id="watch" class="tbl"></table></div>
+    </section>
+
+    <section class="panel center">
+      <div class="ph"><span id="centerTitle">CL · WTI CRUDE OIL</span><span id="centerTools" class="tools"></span></div>
+      <div id="view" class="view"></div>
+    </section>
+
+    <section class="panel detail">
+      <div class="ph"><span id="detailTitle">SIGNAL STACK</span><span id="srcBadges"></span></div>
+      <div id="detail" class="scroll pad"></div>
+    </section>
+
+    <section class="panel alerts">
+      <div class="ph">ALERTS <span id="alertCount" class="muted"></span></div>
+      <div id="alertFeed" class="scroll"></div>
+    </section>
+
+    <section class="panel propmini">
+      <div class="ph">PROP ACCOUNT <span id="propName" class="muted"></span></div>
+      <div id="propMini" class="pad"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span id="footMsg">Ready.</span>
+    <span class="muted">For information only, not investment advice. Simulated data is labelled SIM. Futures trading carries substantial risk of loss.</span>
+  </footer>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

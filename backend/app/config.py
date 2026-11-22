@@ -1,0 +1,59 @@
+"""Runtime configuration, read from environment variables (or a .env file)."""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_dotenv()
+
+
+def _bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True)
+class Settings:
+    # "sim" = fully simulated, deterministic data (works offline, good for demos).
+    # "live" = try real sources (CFTC, EIA, Yahoo) and fall back to sim per-source on failure.
+    data_mode: str = field(default_factory=lambda: os.getenv("DATA_MODE", "sim").lower())
+    eia_api_key: str = field(default_factory=lambda: os.getenv("EIA_API_KEY", ""))
+    tick_interval_s: float = field(default_factory=lambda: float(os.getenv("TICK_INTERVAL_S", "1.0")))
+    signal_interval_s: float = field(default_factory=lambda: float(os.getenv("SIGNAL_INTERVAL_S", "15")))
+    cache_dir: Path = field(
+        default_factory=lambda: Path(os.getenv("CACHE_DIR", Path(__file__).resolve().parents[1] / ".cache"))
+    )
+    sim_seed: int = field(default_factory=lambda: int(os.getenv("SIM_SEED", "42")))
+
+    # Broker / prop-firm connectivity. Live order routing is OFF unless explicitly enabled.
+    live_trading_enabled: bool = field(default_factory=lambda: _bool("LIVE_TRADING_ENABLED"))
+    broker: str = field(default_factory=lambda: os.getenv("BROKER", "paper").lower())
+    tradovate_env: str = field(default_factory=lambda: os.getenv("TRADOVATE_ENV", "demo"))
+    tradovate_user: str = field(default_factory=lambda: os.getenv("TRADOVATE_USER", ""))
+    tradovate_password: str = field(default_factory=lambda: os.getenv("TRADOVATE_PASSWORD", ""))
+    tradovate_app_id: str = field(default_factory=lambda: os.getenv("TRADOVATE_APP_ID", ""))
+    tradovate_cid: str = field(default_factory=lambda: os.getenv("TRADOVATE_CID", ""))
+    tradovate_secret: str = field(default_factory=lambda: os.getenv("TRADOVATE_SECRET", ""))
+    projectx_base_url: str = field(default_factory=lambda: os.getenv("PROJECTX_BASE_URL", ""))
+    projectx_user: str = field(default_factory=lambda: os.getenv("PROJECTX_USER", ""))
+    projectx_api_key: str = field(default_factory=lambda: os.getenv("PROJECTX_API_KEY", ""))
+
+    @property
+    def live(self) -> bool:
+        return self.data_mode == "live"
+
+
+settings = Settings()
