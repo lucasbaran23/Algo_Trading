@@ -6,13 +6,22 @@ const S = {
   snap: null, charts: [], mainSeries: null, chartMode: "D", ws: null, tapeAt: 0,
 };
 const LWC = window.LightweightCharts;
-const SECTORS = ["Energy", "Metals", "Grains", "Softs", "Livestock"];
+const SECTORS = ["Indices", "Energy", "Metals", "Grains", "Softs", "Livestock"];
 const FACTORS = [
   ["trend", "Trend (TSMOM)", "TREND"], ["breakout", "Breakout", "BRKOUT"], ["mean_reversion", "Mean reversion", "MEANREV"],
   ["carry", "Carry / curve", "CARRY"], ["seasonality", "Seasonality", "SEASON"], ["cot", "COT positioning", "COT"],
   ["supply_demand", "Supply / demand", "S&amp;D"],
 ];
 const $ = (s, el = document) => el.querySelector(s);
+// Theme tokens live in CSS custom properties; charts need concrete colours, so read them at render time.
+const C = (name) => getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
+const CA = (name, a) => `rgba(${C(name).split(/\s+/).join(",")},${a})`;
+const THEMES = ["nightfall", "classic"];
+function applyTheme(t) {
+  document.documentElement.dataset.theme = THEMES.includes(t) ? t : "nightfall";
+  try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch { /* no storage */ }
+}
+applyTheme((() => { try { return localStorage.getItem("theme"); } catch { return null; } })());
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // ------------------------------------------------------------------ utils
@@ -39,7 +48,7 @@ const biasCls = (b) => (b?.includes("BUY") ? "b-up" : b?.includes("SELL") ? "b-d
 const chip = (v) => {
   if (v == null) return '<span class="chip muted">n/a</span>';
   const a = Math.min(1, Math.abs(v) / 100) * 0.55;
-  const bg = v >= 0 ? `rgba(47,191,113,${a})` : `rgba(240,86,74,${a})`;
+  const bg = v >= 0 ? `rgb(var(--up-rgb) / ${a})` : `rgb(var(--down-rgb) / ${a})`;
   return `<span class="chip" style="background:${bg}">${signed(v, 0)}</span>`;
 };
 const srcBadge = (label, v) => `<span class="badge ${String(v).toLowerCase()}" title="${label} source">${label}:${v}</span>`;
@@ -71,12 +80,12 @@ function tickClocks() {
 
 // ------------------------------------------------------------------ watchlist
 function renderWatch() {
-  const head = `<thead><tr><th>SYM</th><th>LAST</th><th>CHG%</th><th title="Swing composite (quant + quantamental)">SWING</th><th title="Intraday composite">DAY</th><th title="Managed-money COT index, 3y">COT</th><th title="Model probability price is higher in 5 days">P↑5D</th></tr></thead>`;
+  const head = `<thead><tr><th>SYM</th><th>LAST</th><th>CHG%</th><th title="Swing composite (quant + quantamental)">SWING</th><th title="Intraday composite">DAY</th><th title="Managed-money COT index, 3y">COT</th><th title="Model probability price is higher in 5 days">P↑5D</th><th title="Time-decayed news sentiment">NEWS</th></tr></thead>`;
   let body = "";
   for (const sec of SECTORS) {
     const rows = Object.values(S.rows).filter((r) => r.sector === sec);
     if (!rows.length) continue;
-    body += `<tr class="sector"><td colspan="7">${sec.toUpperCase()}</td></tr>`;
+    body += `<tr class="sector"><td colspan="8">${sec.toUpperCase()}</td></tr>`;
     for (const r of rows) {
       body += `<tr class="row ${r.symbol === S.sel ? "sel" : ""}" data-sym="${r.symbol}">
         <td class="sym" title="${esc(r.name)}">${r.symbol}</td>
@@ -84,7 +93,7 @@ function renderWatch() {
         <td data-f="chg_pct" class="${cls(r.chg_pct)}">${signed(r.chg_pct, 2)}</td>
         <td>${chip(r.swing)}</td><td>${chip(r.day)}</td>
         <td title="${esc(r.cot_state)}">${fx(r.cot_index, 0)}</td>
-        <td>${fx(r.p_up_5d * 100, 0)}%</td></tr>`;
+        <td>${fx(r.p_up_5d * 100, 0)}%</td><td>${r.news == null ? '<span class="muted">·</span>' : chip(r.news)}</td></tr>`;
     }
   }
   $("#watch").innerHTML = head + `<tbody>${body}</tbody>`;
@@ -150,6 +159,7 @@ function renderDetail() {
     <div class="sec">FACTORS <span class="muted">−100 bearish · +100 bullish</span></div>
     ${FACTORS.map(([k, l]) => sigBar(l, s.scores[k])).join("")}
     ${sigBar("Intraday VWAP", s.day.vwap_score)}
+    ${sigBar("News flow (day)", s.day.news_score)}
 
     <div class="sec">DAY-TRADE LEVELS <span class="muted">${lv.bias}</span></div>
     <div class="kv">
@@ -182,6 +192,7 @@ function renderDetail() {
       <span>Stocks vs 5y</span><span class="${cls(-sd.dev_pct)}">${signed(sd.dev_pct, 1)}% (${signed(sd.dev_z, 1)}σ)</span>
       <span>Weekly chg / normal</span><span>${signed(sd.weekly_chg, 1)} / ${signed(sd.normal_chg, 1)}</span>
       <span>Balance</span><span class="amber">${sd.balance}</span></div>` : ""}
+    ${typeof newsDetail === "function" ? newsDetail(sym) : ""}
     <div class="row-actions">
       <button class="btn buy" data-act="ticket" data-side="BUY">BUY ${sym}</button>
       <button class="btn sell" data-act="ticket" data-side="SELL">SELL ${sym}</button>
@@ -197,10 +208,10 @@ function destroyCharts() {
 function makeChart(el, extra = {}) {
   const chart = LWC.createChart(el, {
     autoSize: true,
-    layout: { background: { type: "solid", color: "#0b0d10" }, textColor: "#b4ada0", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11 },
-    grid: { vertLines: { color: "#141a20" }, horzLines: { color: "#141a20" } },
-    rightPriceScale: { borderColor: "#222a33" },
-    timeScale: { borderColor: "#222a33", rightOffset: 4 },
+    layout: { background: { type: "solid", color: C("surface") }, textColor: C("ink-2"), fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11 },
+    grid: { vertLines: { color: C("chart-grid") }, horzLines: { color: C("chart-grid") } },
+    rightPriceScale: { borderColor: C("line") },
+    timeScale: { borderColor: C("line"), rightOffset: 4 },
     crosshair: { mode: LWC.CrosshairMode.Normal },
     ...extra,
   });
@@ -218,10 +229,10 @@ async function renderPriceChart(container, { cone = true, days = 260 } = {}) {
   const sym = S.sel, s = S.snap, dataSym = s.contract.parent || sym;
   container.innerHTML = `<div class="legend" id="pxLegend"></div><div class="chart" id="pxChart"></div>`;
   const chart = makeChart($("#pxChart", container), {
-    timeScale: { borderColor: "#222a33", rightOffset: 4, timeVisible: S.chartMode === "I", secondsVisible: false },
+    timeScale: { borderColor: C("line"), rightOffset: 4, timeVisible: S.chartMode === "I", secondsVisible: false },
   });
   const candles = chart.addCandlestickSeries({
-    upColor: "#2fbf71", downColor: "#f0564a", borderVisible: false, wickUpColor: "#2fbf71", wickDownColor: "#f0564a",
+    upColor: C("up"), downColor: C("down"), borderVisible: false, wickUpColor: C("up"), wickDownColor: C("down"),
     priceFormat: { type: "price", precision: decimals(sym), minMove: S.universe[sym].tick_size },
   });
   S.mainSeries = candles;
@@ -235,17 +246,17 @@ async function renderPriceChart(container, { cone = true, days = 260 } = {}) {
   candles.setData(data);
   const lv = s.levels;
   const line = (price, title, color, style = 2) => candles.createPriceLine({ price, title, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true });
-  line(lv.r1, "R1", "#6f6a60"); line(lv.s1, "S1", "#6f6a60"); line(lv.pivot, "PIV", "#8a5c00");
-  line(lv.vwap, "VWAP", "#2b9fd0", 0);
+  line(lv.r1, "R1", C("muted")); line(lv.s1, "S1", C("muted")); line(lv.pivot, "PIV", C("accent-dim"));
+  line(lv.vwap, "VWAP", C("s2"), 0);
 
   let legendBase = `<span><b class="amber">${sym}</b> ${S.chartMode === "I" ? "1-min" : "daily"}</span>`;
   if (cone && S.chartMode === "D" && data.length) {
     const last = data[data.length - 1];
     const dates = nextBusinessDays(last.time, s.forecast.cone.length - 1);
     const pts = (k) => s.forecast.cone.map((c, i) => ({ time: i === 0 ? last.time : dates[i - 1], value: c[k] }));
-    const mk = (k, style, w = 1) => chart.addLineSeries({ color: "#c98200", lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(pts(k));
+    const mk = (k, style, w = 1) => chart.addLineSeries({ color: C("s1"), lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(pts(k));
     mk("mid", 0, 2); mk("hi1", 2); mk("lo1", 2); mk("hi2", 3); mk("lo2", 3);
-    legendBase += `<span><i style="background:#c98200"></i>20d forecast · 1σ dashed · 2σ dotted</span><span><i style="background:#2b9fd0"></i>VWAP</span>`;
+    legendBase += `<span><i style="background:var(--s1)"></i>20d forecast · 1σ dashed · 2σ dotted</span><span><i style="background:var(--s2)"></i>VWAP</span>`;
   }
   const leg = $("#pxLegend", container);
   leg.dataset.base = legendBase;
@@ -282,24 +293,24 @@ const VIEWS = {
       <tbody>${table.map((r) => `<tr class="row ${r.symbol === S.sel ? "sel" : ""}" data-sym="${r.symbol}" data-view="COT">
         <td class="sym">${r.symbol}</td><td>${r.report_date}</td><td class="${cls(r.mm_net)}">${r.mm_net.toLocaleString()}</td>
         <td class="${cls(r.mm_net_chg)}">${signed(r.mm_net_chg, 0)}</td><td>${signed(r.mm_chg_z, 1)}</td>
-        <td><span class="chip" style="background:${r.mm_index_3y >= 90 || r.mm_index_3y <= 10 ? "rgba(242,194,48,.35)" : "transparent"}">${fx(r.mm_index_3y, 0)}</span></td>
+        <td><span class="chip" style="background:${r.mm_index_3y >= 90 || r.mm_index_3y <= 10 ? "rgb(var(--warn-rgb) / .35)" : "transparent"}">${fx(r.mm_index_3y, 0)}</span></td>
         <td>${fx(r.pm_index_3y, 0)}</td><td>${signed(r.mm_pct_oi, 1)}%</td><td>${r.state}</td><td>${srcBadge("", r.source).replace(":", "")}</td></tr>`).join("")}</tbody></table></div>`;
     const c1 = makeChart($("#cotChart", v));
-    const mm = c1.addHistogramSeries({ color: "#c98200", priceFormat: { type: "volume" }, priceLineVisible: false });
+    const mm = c1.addHistogramSeries({ color: C("s1"), priceFormat: { type: "volume" }, priceLineVisible: false });
     mm.setData(hist.map((h) => ({ time: h.date, value: h.mm_net })));
-    const pm = c1.addLineSeries({ color: "#2b9fd0", lineWidth: 2, priceFormat: { type: "volume" }, priceLineVisible: false });
+    const pm = c1.addLineSeries({ color: C("s2"), lineWidth: 2, priceFormat: { type: "volume" }, priceLineVisible: false });
     pm.setData(hist.map((h) => ({ time: h.date, value: h.pm_net })));
-    const base1 = `<span><i style="background:#c98200"></i>Managed money net (contracts)</span><span><i style="background:#2b9fd0"></i>Producer/merchant net</span>`;
+    const base1 = `<span><i style="background:var(--s1)"></i>Managed money net (contracts)</span><span><i style="background:var(--s2)"></i>Producer/merchant net</span>`;
     const l1 = $("#cotLegend", v); l1.dataset.base = base1; l1.innerHTML = base1;
-    readout(c1, l1, (p) => `<span>${p.time}</span><span><i style="background:#c98200"></i>MM ${(p.seriesData.get(mm)?.value ?? 0).toLocaleString()}</span><span><i style="background:#2b9fd0"></i>Comm ${(p.seriesData.get(pm)?.value ?? 0).toLocaleString()}</span>`);
+    readout(c1, l1, (p) => `<span>${p.time}</span><span><i style="background:var(--s1)"></i>MM ${(p.seriesData.get(mm)?.value ?? 0).toLocaleString()}</span><span><i style="background:var(--s2)"></i>Comm ${(p.seriesData.get(pm)?.value ?? 0).toLocaleString()}</span>`);
     c1.timeScale().fitContent();
 
     const c2 = makeChart($("#idxChart", v));
-    const idx = c2.addLineSeries({ color: "#c98200", lineWidth: 2, priceLineVisible: false });
+    const idx = c2.addLineSeries({ color: C("s1"), lineWidth: 2, priceLineVisible: false });
     idx.setData(hist.map((h) => ({ time: h.date, value: h.mm_index })));
-    idx.createPriceLine({ price: 90, color: "#f2c230", lineStyle: 2, lineWidth: 1, title: "CROWDED LONG" });
-    idx.createPriceLine({ price: 10, color: "#f2c230", lineStyle: 2, lineWidth: 1, title: "CROWDED SHORT" });
-    const base2 = `<span><i style="background:#c98200"></i>MM COT index (3y range, 0–100)</span>`;
+    idx.createPriceLine({ price: 90, color: C("warn"), lineStyle: 2, lineWidth: 1, title: "CROWDED LONG" });
+    idx.createPriceLine({ price: 10, color: C("warn"), lineStyle: 2, lineWidth: 1, title: "CROWDED SHORT" });
+    const base2 = `<span><i style="background:var(--s1)"></i>MM COT index (3y range, 0–100)</span>`;
     const l2 = $("#idxLegend", v); l2.dataset.base = base2; l2.innerHTML = base2;
     readout(c2, l2, (p) => `<span>${p.time}</span><span>Index ${fx(p.seriesData.get(idx)?.value, 0)}</span>`);
     c2.timeScale().fitContent();
@@ -322,13 +333,13 @@ const VIEWS = {
         <td>${r.balance}</td><td>${srcBadge("", r.source).replace(":", "")}</td></tr>`).join("")}</tbody></table>
       <div class="pad muted">Stocks below the 5-year seasonal norm = tight balance (bullish); colour shows bullish (green) / bearish (red). Metals, grains, softs and livestock S&amp;D (USDA WASDE, LME/COMEX stocks) are on the roadmap.</div></div>`;
     const ch = makeChart($("#sdChart", v));
-    const a = ch.addLineSeries({ color: "#c98200", lineWidth: 2, priceLineVisible: false });
+    const a = ch.addLineSeries({ color: C("s1"), lineWidth: 2, priceLineVisible: false });
     a.setData(hist.map((h) => ({ time: h.date, value: h.stocks })));
-    const b = ch.addLineSeries({ color: "#2b9fd0", lineWidth: 2, lineStyle: 2, priceLineVisible: false });
+    const b = ch.addLineSeries({ color: C("s2"), lineWidth: 2, lineStyle: 2, priceLineVisible: false });
     b.setData(hist.filter((h) => h.norm != null).map((h) => ({ time: h.date, value: h.norm })));
-    const base = `<span><i style="background:#c98200"></i>${sym} stocks</span><span><i style="background:#2b9fd0"></i>5-yr same-week average</span>`;
+    const base = `<span><i style="background:var(--s1)"></i>${sym} stocks</span><span><i style="background:var(--s2)"></i>5-yr same-week average</span>`;
     const l = $("#sdLegend", v); l.dataset.base = base; l.innerHTML = base;
-    readout(ch, l, (p) => `<span>${p.time}</span><span><i style="background:#c98200"></i>Stocks ${fx(p.seriesData.get(a)?.value, 1)}</span><span><i style="background:#2b9fd0"></i>5y ${fx(p.seriesData.get(b)?.value, 1)}</span>`);
+    readout(ch, l, (p) => `<span>${p.time}</span><span><i style="background:var(--s1)"></i>Stocks ${fx(p.seriesData.get(a)?.value, 1)}</span><span><i style="background:var(--s2)"></i>5y ${fx(p.seriesData.get(b)?.value, 1)}</span>`);
     ch.timeScale().fitContent();
   },
 
@@ -437,13 +448,14 @@ const VIEWS = {
     setTitle("HELP · COMMANDS");
     tools("");
     const cmds = [
-      ["CL", "Load a security (any root: CL NG RB HO GC SI HG PL ZC ZS ZW KC SB CC CT LE HE MCL MGC)"],
+      ["CL", "Load a security (any root: ES NQ YM CL NG RB HO GC SI HG PL ZC ZS ZW KC SB CC CT LE HE + micros MES MNQ MYM MCL MGC)"],
       ["CL COT / CL SD / CL FCST / CL MON", "Load security into a function screen"],
-      ["COT · SD · FCST · SIG · PROP · ALRT · MON · BT", "Open a function screen (or F1–F9)"],
+      ["COT · SD · FCST · SIG · PROP · ALRT · MON · BT · NEWS", "Open a function screen (or F1–F10)"],
       ["BUY 2 MCL / SELL 1 CL", "Paper market order with the ticket's stop/target ticks, after prop rule checks"],
       ["ALRT CL > 70 / ALRT NG SWING < -50", "Create a custom alert (field defaults to LAST)"],
       ["FLAT", "Flatten all paper positions"],
       ["BT / BACKTEST (F9)", "Backtest lab: run, compare, optimise, walk-forward, Monte Carlo"],
+      ["NEWS (F10) / CL NEWS", "News feed with LONG/SHORT signal and ★–★★★ importance per market"],
       ["↑ / ↓", "Move through the monitor"],
     ];
     v.innerHTML = `<div class="pad help"><table class="tbl"><tbody>${cmds.map(([c, d]) => `<tr><td><code>${c}</code></td><td>${d}</td></tr>`).join("")}</tbody></table>
@@ -551,7 +563,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);
@@ -572,7 +584,10 @@ async function runCommand(raw) {
     return;
   }
   if (views[a]) { S.view = views[a]; return renderView(); }
-  if (S.universe[a]) return select(a, views[b] || S.view);
+  if (S.universe[a]) {
+    if (views[b] === "NEWS" && typeof NEWS !== "undefined") NEWS.filter.symbol = S.universe[a].parent || a;
+    return select(a, views[b] || S.view);
+  }
   foot(`Unknown command: ${raw}. Type HELP.`);
 }
 
@@ -617,6 +632,8 @@ function connect() {
       if (m.alert.severity !== "INFO" || m.alert.symbol === S.sel) toast(m.alert.title, m.alert.detail, m.alert.severity);
     } else if (m.type === "fill") {
       refreshPropView();
+    } else if (m.type === "news" && typeof onNews === "function") {
+      onNews(m.items);
     }
   };
 }
@@ -684,7 +701,7 @@ document.addEventListener("click", async (ev) => {
   if (t.dataset.sym && t.dataset.sym !== "PROP" && S.universe[t.dataset.sym]) return select(t.dataset.sym, t.dataset.view || undefined);
 });
 document.addEventListener("keydown", (ev) => {
-  const fmap = { F1: "MON", F2: "COT", F3: "SD", F4: "FCST", F5: "SIG", F6: "PROP", F7: "ALRT", F8: "HELP", F9: "BT" };
+  const fmap = { F1: "MON", F2: "COT", F3: "SD", F4: "FCST", F5: "SIG", F6: "PROP", F7: "ALRT", F8: "HELP", F9: "BT", F10: "NEWS" };
   if (fmap[ev.key]) { ev.preventDefault(); S.view = fmap[ev.key]; return renderView(); }
   const inInput = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName);
   if (!inInput && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) {
@@ -695,6 +712,13 @@ document.addEventListener("keydown", (ev) => {
   } else if (!inInput && ev.key.length === 1 && /[a-z]/i.test(ev.key) && !ev.metaKey && !ev.ctrlKey) {
     $("#cmd").focus();
   }
+});
+$("#themeBtn").addEventListener("click", () => {
+  const cur = document.documentElement.dataset.theme;
+  applyTheme(THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length]);
+  renderWatch();
+  renderView();               // rebuild charts with the new theme's colours
+  foot(`Theme: ${document.documentElement.dataset.theme}`);
 });
 $("#cmdForm").addEventListener("submit", (ev) => { ev.preventDefault(); const v = $("#cmd").value; $("#cmd").value = ""; runCommand(v); });
 

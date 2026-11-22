@@ -13,7 +13,7 @@ SWING_WEIGHTS = {
     "trend": 0.25, "breakout": 0.10, "mean_reversion": 0.05, "carry": 0.10,
     "seasonality": 0.10, "cot": 0.20, "supply_demand": 0.20,
 }
-DAY_WEIGHTS = {"vwap": 0.30, "breakout": 0.25, "mean_reversion": 0.20, "trend": 0.25}
+DAY_WEIGHTS = {"vwap": 0.25, "breakout": 0.20, "mean_reversion": 0.15, "trend": 0.25, "news": 0.15}
 QUANT_KEYS = {"trend", "breakout", "mean_reversion", "carry", "seasonality"}
 
 
@@ -40,6 +40,7 @@ class SignalEngine:
         self.md = md
         self.hit_rates: dict[str, float] = {}
         self.snapshots: dict[str, dict] = {}
+        self.news_scores: dict[str, dict] = {}   # set by the news service before each compute
 
     def warmup(self) -> None:
         for sym in universe.DATA_SYMBOLS:
@@ -80,9 +81,11 @@ class SignalEngine:
             {k: v for k, v in scores.items() if k not in QUANT_KEYS}, SWING_WEIGHTS
         )
         vwap_score = max(-100.0, min(100.0, 100 * math.tanh(levels["vwap_dev_atr"] / 0.5)))
+        news = self.news_scores.get(sym)
+        news_score = news["score"] if news and news["count"] else None
         day = _weighted(
             {"vwap": vwap_score, "breakout": bo["score"], "mean_reversion": mr["score"],
-             "trend": trend["score"]},
+             "trend": trend["score"], "news": news_score},
             DAY_WEIGHTS,
         )
         live_scores = [v for v in scores.values() if v is not None]
@@ -97,7 +100,8 @@ class SignalEngine:
             "sources": md.sources.get(sym, {}),
             "scores": scores,
             "swing": {"score": swing, "bias": bias_label(swing), "agreement": f"{agree}/{len(live_scores)}"},
-            "day": {"score": day, "bias": bias_label(day), "vwap_score": vwap_score},
+            "day": {"score": day, "bias": bias_label(day), "vwap_score": vwap_score, "news_score": news_score},
+            "news": news,
             "quant_score": quant_only,
             "fundamental_score": fundamental_only,
             "detail": {
@@ -128,5 +132,6 @@ class SignalEngine:
             "sd_z": round(s["supply_demand"]["dev_z"], 2) if s["supply_demand"] else None,
             "p_up_5d": round(s["forecast"]["horizons"]["5"]["p_up"], 3),
             "vol_regime": s["detail"]["vol"]["regime"],
+            "news": s["day"]["news_score"],
             "sources": s["sources"],
         }

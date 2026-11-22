@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app import universe
 from app.alerts import AlertEngine, UserRule
 from app.main import app
 
@@ -39,7 +40,7 @@ def test_api_end_to_end():
         rows = c.get("/api/watchlist").json()
         assert {r["symbol"] for r in rows} >= {"CL", "MCL", "GC", "ZC"}
         assert c.get("/api/snapshot/MCL").json()["contract"]["parent"] == "CL"
-        assert len(c.get("/api/matrix").json()) == 17
+        assert len(c.get("/api/matrix").json()) == len(universe.DATA_SYMBOLS)
         r = c.post("/api/orders", json={"symbol": "MCL", "side": "BUY", "qty": 1, "stop_ticks": 20, "target_ticks": 40})
         assert r.status_code == 200 and r.json()["order"]["status"] == "FILLED"
         r = c.post("/api/orders", json={"symbol": "CL", "side": "BUY", "qty": 50, "stop_ticks": 20})

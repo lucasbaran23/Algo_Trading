@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Commodities Desk Terminal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -12,11 +15,12 @@
     <div class="brand">CMDTY<span>//DESK</span></div>
     <form id="cmdForm" class="cmd" autocomplete="off">
       <span class="prompt">&gt;</span>
-      <input id="cmd" spellcheck="false" placeholder="CL COT · NG SD · GC FCST · BUY 2 MCL · ALRT CL > 70 · HELP" aria-label="Command line">
+      <input id="cmd" spellcheck="false" placeholder="ES · NQ NEWS · CL COT · GC FCST · BUY 2 MES · ALRT CL > 70 · HELP" aria-label="Command line">
       <button type="submit" class="go">GO</button>
     </form>
     <div class="clocks" id="clocks"></div>
     <div class="status">
+      <button id="themeBtn" class="themebtn" title="Switch theme">◐ THEME</button>
       <span id="modeBadge" class="badge">SIM</span>
       <span id="connBadge" class="badge bad">OFFLINE</span>
     </div>
@@ -34,6 +38,7 @@
     <button data-view="ALRT"><b>F7</b>ALERTS</button>
     <button data-view="HELP"><b>F8</b>HELP</button>
     <button data-view="BT"><b>F9</b>BACKTEST LAB</button>
+    <button data-view="NEWS"><b>F10</b>NEWS</button>
   </nav>
 
   <main class="grid">
@@ -53,8 +58,12 @@
     </section>
 
     <section class="panel alerts">
-      <div class="ph">ALERTS <span id="alertCount" class="muted"></span></div>
+      <div class="ph"><div class="ptabs" role="tablist">
+          <button data-ptab="alerts" class="on" role="tab">Alerts <span id="alertCount" class="muted"></span></button>
+          <button data-ptab="news" role="tab">News <span id="newsCount" class="muted"></span></button>
+        </div><span id="ptabInfo" class="muted"></span></div>
       <div id="alertFeed" class="scroll"></div>
+      <div id="newsFeed" class="scroll" hidden></div>
     </section>
 
     <section class="panel propmini">
@@ -70,5 +79,6 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <script src="/static/app.js"></script>
   <script src="/static/backtest.js"></script>
+  <script src="/static/news.js"></script>
 </body>
 </html>

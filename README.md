@@ -1,12 +1,20 @@
 # CMDTY//DESK: Commodities Terminal for Prop Traders
 
-A live, terminal-style dashboard for commodity futures **day trading and swing trading**. It combines
+A live, terminal-style dashboard for commodity and equity-index futures **day trading and swing trading**. It combines
 quantitative signals (trend, breakout, mean reversion, carry, seasonality, volatility regime) with
 quantamental ones (CFTC COT positioning, inventory supply/demand vs 5-year norms). It adds forecasts,
 real-time alerts, and a **prop desk** that tracks evaluation/funded-account rules and blocks trades
 that would breach them.
 
 > Working name. Do a trademark search before you pick the commercial brand.
+
+![Monitor](docs/screenshots/01-monitor-es.png)
+
+More screenshots in [`docs/screenshots/`](docs/screenshots): news, COT, signal matrix, prop desk, backtest lab,
+optimiser, the classic theme and mobile.
+
+**Themes:** *Nightfall* (default) is a graphite-navy design with a teal accent, sans-serif labels and monospaced
+numbers. *Classic* is an amber-on-black terminal look. Switch between them with the ◐ THEME button.
 
 ## Quick start
 
@@ -23,7 +31,7 @@ Run the tests with `cd backend && python -m pytest -q`.
 
 | Data | Source | Key | Notes |
 |---|---|---|---|
-| COT positioning | CFTC Public Reporting API, Disaggregated Futures-Only | none | weekly (Tue data, Fri release) |
+| COT positioning | CFTC Public Reporting API: Disaggregated (commodities), Traders in Financial Futures (indices) | none | weekly (Tue data, Fri release) |
 | Inventories | EIA Open Data v2 (crude, gasoline, distillate, nat gas storage) | free | weekly |
 | Prices | Yahoo Finance chart API | none | **prototype only**: delayed, not licensed for redistribution |
 
@@ -39,12 +47,13 @@ Run the tests with `cd backend && python -m pytest -q`.
 | F6 | PROP DESK | Rule editor and presets, drawdown/daily-loss/target meters, risk sizer, bracket order ticket, positions, trade log |
 | F7 | ALERTS | Built-in triggers plus custom rules |
 | F8 | HELP | Commands and methodology |
+| F10 | NEWS | Market-linked headlines, each tagged LONG/SHORT per market with ★–★★★ importance; per-market news sentiment |
 | F9 | BACKTEST LAB | Run, compare, optimise, walk-forward and Monte Carlo strategies, with a prop-evaluation simulator |
 
 Command line examples: `CL`, `NG COT`, `GC FCST`, `BUY 2 MCL`, `SELL 1 CL`, `ALRT CL > 70`,
-`ALRT NG SWING < -50`, `FLAT`, `BT`.
+`ALRT NG SWING < -50`, `FLAT`, `BT`, `NQ NEWS`.
 
-**Universe:** CL NG RB HO · GC SI HG PL · ZC ZS ZW · KC SB CC CT · LE HE · MCL MGC (micros map to their parent's data).
+**Universe:** ES NQ YM (+ micros MES MNQ MYM) · CL NG RB HO · GC SI HG PL · ZC ZS ZW · KC SB CC CT · LE HE · MCL MGC (micros map to their parent's data).
 
 ## Signal methodology
 
@@ -60,10 +69,35 @@ Every factor is scored from −100 (bearish) to +100 (bullish).
 * **Supply/demand:** stocks vs the 5-year same-week norm (z-score), plus the weekly surprise vs the normal change.
 * **Swing composite:** trend 25%, COT 20%, S&D 20%, breakout 10%, carry 10%, seasonality 10%, mean reversion 5%.
   Weights are renormalised when a factor is unavailable.
-* **Day composite:** VWAP deviation in ATRs 30%, breakout 25%, trend 25%, mean reversion 20%.
+* **Day composite:** VWAP deviation in ATRs 25%, trend 25%, breakout 20%, mean reversion 15%, news flow 15%.
   Floor pivots, previous high/low and ATR in ticks and $/contract support execution.
 * **Forecast:** shrunk momentum drift + AR(1) + seasonal drift, with an EWMA volatility cone.
   The walk-forward 5-day hit rate is shown next to it. Expect roughly 50%. The value is in the range, not the direction.
+
+## News feed (F10)
+
+Every headline is mapped to the futures markets it moves. For each market it gets:
+* **Signal:** LONG (bullish), SHORT (bearish) or NEUTRAL.
+* **Importance:**
+  * ★★★: tier-1 scheduled releases or shocks (Fed decisions, CPI, payrolls, OPEC+, EIA/USDA/WASDE reports,
+    wars, sanctions, outages, export or import bans, hurricanes).
+  * ★★: real fundamental news (inventories, export sales, crop conditions, Fed guidance, earnings of index heavyweights).
+  * ★: commentary, previews, analyst opinion, or price-move stories.
+* **Reasons:** hover a market tag to see the exact phrases that drove the call.
+
+3★ headlines raise a CRITICAL alert and a toast, and 2★ headlines an INFO alert.
+
+Each market also gets a **news sentiment** score: Σ direction × importance, halving every 12 h, scaled to −100…+100.
+It appears in the monitor's NEWS column and the signal stack, and feeds the intraday composite at 15% weight.
+
+| Setting | Options |
+|---|---|
+| Source | `DATA_MODE=sim`: simulated newswire (labelled SIM). `live`: Google News and Yahoo Finance RSS per market, plus any `NEWS_FEEDS`. |
+| Classifier | `NEWS_CLASSIFIER=rules` (default): free, instant, explainable keyword model. `claude`: Claude reads batches of 20 headlines and returns schema-validated JSON, including second-order effects. If the call fails, it falls back to rules. Roughly a few cents per batch on the default model; `NEWS_LLM_MODEL` overrides it. |
+
+RSS gives headlines and links only, with minutes of latency, and its terms usually forbid redistribution.
+For a paid product, license a real-time newswire (e.g. Benzinga, Dow Jones, MT Newswires) and plug it in
+next to `feeds.fetch_live`.
 
 ## Prop desk
 
@@ -130,9 +164,9 @@ The UI picks it up automatically.
 
 REST: `/api/watchlist`, `/api/snapshot/{sym}`, `/api/history/{sym}`, `/api/intraday/{sym}`, `/api/cot[/{sym}]`,
 `/api/supply-demand`, `/api/matrix`, `/api/alerts[/rules]`, `/api/prop[/presets|/rules|/reset|/size|/flatten]`,
-`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`.
+`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`.
 
-WebSocket: `/ws` streams `tick`, `signals`, `alert` and `fill` messages. Interactive docs are at `/docs`.
+WebSocket: `/ws` streams `tick`, `signals`, `alert`, `fill` and `news` messages. Interactive docs are at `/docs`.
 
 ## Layout
 
@@ -141,6 +175,7 @@ backend/app/
   config.py, universe.py        settings, contract specs (tick size/value, CFTC codes, EIA series)
   data/sim.py, live.py, store.py simulator, CFTC/EIA/Yahoo adapters, in-memory market hub
   signals/quant.py, fundamental.py, forecast.py, engine.py
+  news/feeds.py, classifier.py, llm.py, service.py  RSS + sim feeds, rule & Claude classifiers, scoring
   alerts.py                     built-in + user rules, dedup/cooldown
   backtest/strategies.py, engine.py  strategy library; simulator, metrics, optimiser, walk-forward, Monte Carlo
   prop/rules.py, brokers.py     prop rule engine, paper/Tradovate/ProjectX adapters

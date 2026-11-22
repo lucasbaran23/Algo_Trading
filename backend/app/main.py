@@ -21,6 +21,7 @@ from .backtest import engine as bt
 from .backtest.strategies import STRATEGIES
 from .config import settings
 from .data.store import MarketData
+from .news.service import NewsService
 from .prop.brokers import Order, PaperBroker, make_live_adapter
 from .prop.rules import PRESETS, PropAccount, PropRules
 from .signals import fundamental
@@ -50,6 +51,7 @@ class Hub:
         self.md = MarketData(settings)
         self.engine = SignalEngine(self.md)
         self.alerts = AlertEngine()
+        self.news = NewsService(settings)
         self.prop = PropAccount()
         self.paper = PaperBroker(self.md.last, self._on_fill)
         self.live_broker = make_live_adapter(settings)
@@ -62,6 +64,8 @@ class Hub:
     def boot(self) -> None:
         self.md.load()
         self.engine.warmup()
+        self.news.seed()
+        self.engine.news_scores = self.news.scores()
         self.engine.compute_all()
         self.alerts.evaluate(self.engine.snapshots, self.rows())
 
@@ -124,6 +128,7 @@ class Hub:
         while True:
             await asyncio.sleep(settings.signal_interval_s)
             try:
+                self.engine.news_scores = self.news.scores()
                 self.engine.compute_all()
                 rows = self.rows()
                 new = self.alerts.evaluate(self.engine.snapshots, rows)
@@ -133,6 +138,30 @@ class Hub:
                     await self.broadcast({"type": "alert", "alert": a.to_dict()})
             except Exception:  # noqa: BLE001
                 log.exception("signal loop error")
+
+    async def news_loop(self) -> None:
+        """Poll news sources; push new classified items and 2-3 star alerts to every client."""
+        while True:
+            await asyncio.sleep(5)
+            try:
+                # live polling does blocking HTTP: keep it off the event loop
+                fresh = await asyncio.to_thread(self.news.poll)
+                if not fresh:
+                    continue
+                await self.broadcast({"type": "news", "items": fresh})
+                for it in fresh:
+                    for sig in it["signals"]:
+                        if sig["stars"] < 2:
+                            continue
+                        a = self.alerts.push_external(
+                            sig["symbol"], "NEWS", "CRITICAL" if sig["stars"] == 3 else "INFO",
+                            f"{'★' * sig['stars']} {sig['symbol']} {sig['direction']}: {it['title']}"[:160],
+                            f"{it['source']} · {', '.join(sig['reasons'][:3])}",
+                            key=f"news:{it['id']}:{sig['symbol']}", cooldown=0)
+                        if a:
+                            await self.broadcast({"type": "alert", "alert": a.to_dict()})
+            except Exception:  # noqa: BLE001
+                log.exception("news loop error")
 
     def prop_status_light(self) -> dict:
         st = self.prop.status(self.prices())
@@ -176,7 +205,8 @@ hub = Hub()
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI):
     hub.boot()
-    hub.tasks = [asyncio.create_task(hub.tick_loop()), asyncio.create_task(hub.signal_loop())]
+    hub.tasks = [asyncio.create_task(hub.tick_loop()), asyncio.create_task(hub.signal_loop()),
+                 asyncio.create_task(hub.news_loop())]
     log.info("Terminal up. Data mode=%s, live routing=%s", settings.data_mode, bool(hub.live_broker))
     yield
     for t in hub.tasks:
@@ -197,7 +227,7 @@ def _sym(symbol: str) -> str:
 @app.get("/api/health")
 async def health():
     return {"ok": True, "data_mode": settings.data_mode, "loaded_at": hub.md.loaded_at,
-            "live_routing": bool(hub.live_broker), "sources": hub.md.sources}
+            "live_routing": bool(hub.live_broker), "sources": hub.md.sources, "news": hub.news.status()}
 
 
 @app.get("/api/universe")
@@ -279,6 +309,24 @@ async def sd_table():
             out.append({"symbol": s, "name": universe.get(s).name, "source": hub.md.sources[s]["inventory"],
                         **{k: v for k, v in sd.items() if k != "history"}})
     return _clean(out)
+
+
+# ---------------------------------------------------------------------- news
+@app.get("/api/news")
+async def news(symbol: str | None = None, min_stars: int = 1, direction: str | None = None, limit: int = 100):
+    if symbol:
+        _sym(symbol)
+    return _clean(hub.news.query(symbol, min_stars, direction.upper() if direction else None, min(limit, 500)))
+
+
+@app.get("/api/news/scores")
+async def news_scores():
+    return _clean(hub.news.scores())
+
+
+@app.get("/api/news/status")
+async def news_status():
+    return hub.news.status()
 
 
 # ---------------------------------------------------------------------- alerts

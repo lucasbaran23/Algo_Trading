@@ -20,7 +20,8 @@ import pandas as pd
 
 from ..universe import Contract
 
-CFTC_DISAGG_URL = "https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
+CFTC_DISAGG_URL = "https://publicreporting.cftc.gov/resource/72hh-3qpy.json"   # commodities
+CFTC_TFF_URL = "https://publicreporting.cftc.gov/resource/gpe5-46if.json"      # financial futures
 EIA_SERIES_URL = "https://api.eia.gov/v2/seriesid/{series}"
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
@@ -44,7 +45,8 @@ def fetch_cot(c: Contract, cache_dir: Path, weeks: int = 210) -> pd.DataFrame:
             "$order": "report_date_as_yyyy_mm_dd DESC",
             "$limit": str(weeks),
         }
-        r = httpx.get(CFTC_DISAGG_URL, params=params, headers=_HEADERS, timeout=20)
+        url = CFTC_TFF_URL if c.financial else CFTC_DISAGG_URL
+        r = httpx.get(url, params=params, headers=_HEADERS, timeout=20)
         r.raise_for_status()
         return r.json()
 
@@ -60,6 +62,18 @@ def fetch_cot(c: Contract, cache_dir: Path, weeks: int = 210) -> pd.DataFrame:
 
     recs = []
     for row in rows:
+        if c.financial:
+            # TFF report: leveraged funds = speculators ("managed money"), asset managers = real money
+            recs.append({
+                "date": pd.Timestamp(row["report_date_as_yyyy_mm_dd"][:10]),
+                "open_interest": num(row, "open_interest_all"),
+                "mm_long": num(row, "lev_money_positions_long"),
+                "mm_short": num(row, "lev_money_positions_short"),
+                "pm_long": num(row, "asset_mgr_positions_long"),
+                "pm_short": num(row, "asset_mgr_positions_short"),
+                "swap_net": num(row, "dealer_positions_long_all") - num(row, "dealer_positions_short_all"),
+            })
+            continue
         recs.append(
             {
                 "date": pd.Timestamp(row["report_date_as_yyyy_mm_dd"][:10]),

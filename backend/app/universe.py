@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 class Contract:
     symbol: str            # root symbol, e.g. "CL"
     name: str
-    sector: str            # Energy / Metals / Grains / Softs / Livestock
+    sector: str            # Indices / Energy / Metals / Grains / Softs / Livestock
     exchange: str
     tick_size: float       # minimum price increment
     point_value: float     # USD per 1.0 price move per contract
@@ -25,6 +25,11 @@ class Contract:
         return round(self.tick_size * self.point_value, 4)
 
     @property
+    def financial(self) -> bool:
+        """Financial futures use the CFTC TFF report (leveraged funds / asset managers)."""
+        return self.sector == "Indices"
+
+    @property
     def data_symbol(self) -> str:
         return self.parent or self.symbol
 
@@ -35,6 +40,10 @@ class Contract:
 
 
 CONTRACTS: list[Contract] = [
+    # Equity index futures (CME). COT comes from the CFTC Traders in Financial Futures report.
+    Contract("ES", "E-mini S&P 500", "Indices", "CME", 0.25, 50, "ES=F", "13874A", 6800.0, 0.17, 12),
+    Contract("NQ", "E-mini Nasdaq-100", "Indices", "CME", 0.25, 20, "NQ=F", "209742", 25000.0, 0.22, 12),
+    Contract("YM", "E-mini Dow ($5)", "Indices", "CBOT", 1.0, 5, "YM=F", "124603", 47000.0, 0.16, 12),
     # Energy
     Contract("CL", "WTI Crude Oil", "Energy", "NYMEX", 0.01, 1000, "CL=F", "067651", 68.0, 0.34, 6, "PET.WCESTUS1.W"),
     Contract("NG", "Henry Hub Natural Gas", "Energy", "NYMEX", 0.001, 10000, "NG=F", "023651", 3.40, 0.60, 1, "NG.NW2_EPG0_SWO_R48_BCF.W"),
@@ -60,6 +69,10 @@ CONTRACTS: list[Contract] = [
     # Micros (popular with prop accounts) share data with the parent
     Contract("MCL", "Micro WTI Crude", "Energy", "NYMEX", 0.01, 100, "MCL=F", "067651", 68.0, 0.34, 6, parent="CL"),
     Contract("MGC", "Micro Gold", "Metals", "COMEX", 0.1, 10, "MGC=F", "088691", 4100.0, 0.18, 1, parent="GC"),
+    Contract("MES", "Micro E-mini S&P 500", "Indices", "CME", 0.25, 5, "MES=F", "13874A", 6800.0, 0.17, 12, parent="ES"),
+    Contract("MNQ", "Micro E-mini Nasdaq-100", "Indices", "CME", 0.25, 2, "MNQ=F", "209742", 25000.0, 0.22, 12,
+             parent="NQ"),
+    Contract("MYM", "Micro E-mini Dow", "Indices", "CBOT", 1.0, 0.5, "MYM=F", "124603", 47000.0, 0.16, 12, parent="YM"),
 ]
 
 BY_SYMBOL: dict[str, Contract] = {c.symbol: c for c in CONTRACTS}

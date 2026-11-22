@@ -28,7 +28,7 @@ from ..config import Settings
 
 MONTH_CODES = "FGHJKMNQUVXZ"
 LISTED_MONTHS = {
-    "Energy": "FGHJKMNQUVXZ", "Metals": "GJMQVZ", "Grains": "HKNUZ", "Softs": "HKNUZ", "Livestock": "GJMQVZ",
+    "Indices": "HMUZ", "Energy": "FGHJKMNQUVXZ", "Metals": "GJMQVZ", "Grains": "HKNUZ", "Softs": "HKNUZ", "Livestock": "GJMQVZ",
 }
 OVERRIDES = {"ZS": "FHKNQUX", "SI": "HKNUZ", "HG": "HKNUZ", "PL": "FJNV", "KC": "HKNUZ", "SB": "HKNV",
              "CC": "HKNUZ", "CT": "HKNVZ", "HE": "GJKMNQVZ", "LE": "GJMQVZ"}

@@ -5,7 +5,7 @@ const BT = {
   strategies: [], presets: {}, cfg: null, tab: "SUMMARY",
   result: null, opt: null, wf: null, mc: null, compare: [], busy: false,
 };
-const BT_COLORS = ["#c98200", "#2b9fd0", "#2f9e5c", "#a35fd6"]; // validated vs #0b0d10 (CVD + contrast)
+const btColors = () => [C("s1"), C("s2"), C("s3"), C("s4")]; // theme series, validated vs each theme's surface
 const BT_STYLES = [0, 2, 1, 3];                                  // solid / dashed / dotted / large dash
 const BT_DEFAULT = {
   symbol: "CL", strategy: "sma_cross", params: {}, sizing: "fixed", contracts: 1, risk_pct: 0.5,
@@ -143,7 +143,7 @@ function btPropBox(pe) {
 function btEquityChart(el, extra) {
   const r = BT.result;
   el.innerHTML = `<div class="legend" id="btLeg"></div><div class="chart" id="btEq" style="min-height:260px"></div>
-    <div class="legend"><span><i style="background:#f0564a"></i>Drawdown ($)</span></div><div class="chart small" id="btDd" style="flex-basis:130px;min-height:130px"></div>${extra || ""}`;
+    <div class="legend"><span><i style="background:var(--down)"></i>Drawdown ($)</span></div><div class="chart small" id="btDd" style="flex-basis:130px;min-height:130px"></div>${extra || ""}`;
   const usd = { localization: { priceFormatter: (v) => money(v) } };
   const ch = makeChart($("#btEq", el), usd);
   const series = [];
@@ -152,9 +152,9 @@ function btEquityChart(el, extra) {
     s.setData(data);
     series.push({ label, s, color });
   };
-  add("Buy & hold", r.benchmark, "#6f6a60", 1, 1);
-  BT.compare.forEach((c, i) => add(c.label, c.equity, BT_COLORS[i + 1], BT_STYLES[i + 1]));
-  add(btLabel(r.config), r.equity, BT_COLORS[0], 0);
+  add("Buy & hold", r.benchmark, C("muted"), 1, 1);
+  BT.compare.forEach((c, i) => add(c.label, c.equity, btColors()[i + 1], BT_STYLES[i + 1]));
+  add(btLabel(r.config), r.equity, btColors()[0], 0);
   const base = series.slice().reverse().map((x) => `<span><i style="background:${x.color}"></i>${esc(x.label)}</span>`).join("");
   const leg = $("#btLeg", el); leg.dataset.base = base; leg.innerHTML = base;
   readout(ch, leg, (p) => `<span>${p.time}</span>` + series.slice().reverse().map((x) => {
@@ -162,7 +162,7 @@ function btEquityChart(el, extra) {
   }).join(""));
   ch.timeScale().fitContent();
   const dd = makeChart($("#btDd", el), usd);
-  const a = dd.addAreaSeries({ lineColor: "#f0564a", topColor: "rgba(240,86,74,0.05)", bottomColor: "rgba(240,86,74,0.35)", lineWidth: 1, priceLineVisible: false, invertFilledArea: true });
+  const a = dd.addAreaSeries({ lineColor: C("down"), topColor: CA("down-rgb", 0.05), bottomColor: CA("down-rgb", 0.35), lineWidth: 1, priceLineVisible: false, invertFilledArea: true });
   a.setData(r.drawdown);
   dd.timeScale().fitContent();
 }
@@ -175,7 +175,7 @@ function btMonthly(rows) {
   const cell = (v) => {
     if (v == null) return '<td class="muted">·</td>';
     const a = Math.min(1, Math.abs(v) / mx) * 0.6;
-    return `<td style="background:${v >= 0 ? `rgba(47,191,113,${a})` : `rgba(240,86,74,${a})`}">${Math.round(v).toLocaleString()}</td>`;
+    return `<td style="background:${v >= 0 ? `rgb(var(--up-rgb) / ${a})` : `rgb(var(--down-rgb) / ${a})`}">${Math.round(v).toLocaleString()}</td>`;
   };
   return `<table class="tbl"><thead><tr><th>YEAR</th>${"JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split(" ").map((m) => `<th>${m}</th>`).join("")}<th>TOTAL</th></tr></thead><tbody>
     ${rows.map((r) => `<tr><td class="sym">${r.year}</td>${r.months.map(cell).join("")}<td class="${cls(r.total)}"><b>${Math.round(r.total).toLocaleString()}</b></td></tr>`).join("")}</tbody></table>
@@ -201,7 +201,7 @@ function btOptHtml(o) {
         if (v == null || Number.isNaN(v)) return '<td class="muted">·</td>';
         const a = Math.min(1, Math.abs(v) / mx) * 0.65;
         const best = bp[h.x] === h.xs[i] && bp[h.y] === y;
-        return `<td class="${best ? "best" : ""}" style="background:${v >= 0 ? `rgba(47,191,113,${a})` : `rgba(240,86,74,${a})`}" title="${h.x}=${h.xs[i]}, ${h.y}=${y}: ${v}">${fx(v, 2)}</td>`;
+        return `<td class="${best ? "best" : ""}" style="background:${v >= 0 ? `rgb(var(--up-rgb) / ${a})` : `rgb(var(--down-rgb) / ${a})`}" title="${h.x}=${h.xs[i]}, ${h.y}=${y}: ${v}">${fx(v, 2)}</td>`;
       }).join("")}</tr>`).join("")}</tbody></table></div>
       <div class="muted">Look for a broad plateau of good values, not a single bright cell. Isolated peaks rarely survive live trading.</div></div>`;
   }
@@ -225,7 +225,7 @@ function btWfHtml(w) {
     <div class="tiles">${tile("OOS net", money(w.oos_metrics.net_pnl), cls(w.oos_metrics.net_pnl))}${tile("OOS Sharpe", fx(w.oos_metrics.sharpe, 2), cls(w.oos_metrics.sharpe))}
       ${tile("OOS max DD", money(-w.oos_metrics.max_dd), "down")}${tile("WF efficiency", eff == null ? "—" : fx(eff, 2), eff >= 0.5 ? "up" : "down")}</div>
     <div class="muted">WF efficiency = average annualised out-of-sample return ÷ in-sample. Above 0.5 is generally considered robust; near 0 or negative means the optimisation didn't generalise.</div></div>
-    <div class="legend"><span><i style="background:#c98200"></i>Walk-forward out-of-sample equity</span></div><div class="chart small" id="wfEq"></div>
+    <div class="legend"><span><i style="background:var(--s1)"></i>Walk-forward out-of-sample equity</span></div><div class="chart small" id="wfEq"></div>
     <div class="box"><div class="sec">FOLDS <span class="muted">parameter stability: ${Object.entries(w.param_stability).map(([k, v]) => `${esc(k)} ∈ {${v.join(", ")}}`).join(" · ")}</span></div>
     <div class="scroll"><table class="tbl"><thead><tr><th>TRAIN</th><th>TEST</th><th>CHOSEN PARAMS</th><th>IS SHARPE</th><th>OOS SHARPE</th><th>OOS NET</th><th>OOS TRADES</th></tr></thead><tbody>
     ${w.folds.map((f) => `<tr><td>${f.train[0]} → ${f.train[1]}</td><td>${f.test[0]} → ${f.test[1]}</td><td>${esc(Object.entries(f.params).map(([k, v]) => `${k}=${v}`).join(" "))}</td>
@@ -237,14 +237,14 @@ function btMcHtml(m) {
   const all = m.paths.flat();
   const lo = Math.min(...all, 0), hi = Math.max(...all, 0), W = 640, H = 220;
   const y = (v) => H - ((v - lo) / (hi - lo || 1)) * (H - 10) - 5;
-  const lines = m.paths.map((p) => `<polyline fill="none" stroke="#c98200" stroke-opacity="0.35" stroke-width="1" points="${p.map((v, i) => `${(i / (p.length - 1)) * W},${y(v)}`).join(" ")}"/>`).join("");
+  const lines = m.paths.map((p) => `<polyline fill="none" stroke=C("s1") stroke-opacity="0.35" stroke-width="1" points="${p.map((v, i) => `${(i / (p.length - 1)) * W},${y(v)}`).join(" ")}"/>`).join("");
   const row = (label, o) => `<tr><td>${label}</td>${["5", "25", "50", "75", "95"].map((q) => `<td>${money(o[q])}</td>`).join("")}</tr>`;
   return `<div class="box"><div class="sec">MONTE CARLO · ${m.sims} reshuffles of ${m.trades_per_sim} trades</div>
     <div class="tiles">${tile("P(loss)", fx(m.prob_loss_pct, 1) + "%", m.prob_loss_pct > 20 ? "down" : "")}
       ${m.prob_breach_max_dd_pct != null ? tile(`P(DD ≥ ${money(m.prop_max_drawdown)})`, fx(m.prob_breach_max_dd_pct, 1) + "%", m.prob_breach_max_dd_pct > 20 ? "down" : "up") : ""}
       ${tile("Median max DD", money(-m.max_dd["50"]), "down")}${tile("95th pct max DD", money(-m.max_dd["95"]), "down")}</div>
     <svg viewBox="0 0 ${W} ${H}" class="fan" role="img" aria-label="30 sample equity paths from resampled trades">
-      <line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="#6f6a60" stroke-dasharray="3 3"/>${lines}</svg>
+      <line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke=C("muted") stroke-dasharray="3 3"/>${lines}</svg>
     <div class="muted">30 of ${m.sims} resampled equity paths (cumulative P&amp;L by trade). Dashed line = break-even.</div>
     <table class="tbl"><thead><tr><th>PERCENTILE</th><th>5th</th><th>25th</th><th>50th</th><th>75th</th><th>95th</th></tr></thead><tbody>
       ${row("Final P&L", m.final_pnl)}${row("Max drawdown", m.max_dd)}</tbody></table>
@@ -271,7 +271,7 @@ function btRenderResults() {
   if (BT.tab === "SUMMARY" && r) btEquityChart($("#btCharts", el));
   if (BT.tab === "WALK-FWD" && BT.wf) {
     const ch = makeChart($("#wfEq", el), { localization: { priceFormatter: (v) => money(v) } });
-    ch.addLineSeries({ color: "#c98200", lineWidth: 2, priceLineVisible: false }).setData(BT.wf.oos_equity);
+    ch.addLineSeries({ color: C("s1"), lineWidth: 2, priceLineVisible: false }).setData(BT.wf.oos_equity);
     ch.timeScale().fitContent();
   }
 }
