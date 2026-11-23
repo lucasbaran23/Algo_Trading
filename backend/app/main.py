@@ -22,6 +22,7 @@ from .backtest.strategies import STRATEGIES
 from .config import settings
 from .data.store import MarketData
 from .news.service import NewsService
+from .tradesignals.manager import SignalManager
 from .prop.brokers import Order, PaperBroker, make_live_adapter
 from .prop.rules import PRESETS, PropAccount, PropRules
 from .signals import fundamental
@@ -52,6 +53,7 @@ class Hub:
         self.engine = SignalEngine(self.md)
         self.alerts = AlertEngine()
         self.news = NewsService(settings)
+        self.tsig = SignalManager(settings.cache_dir)
         self.prop = PropAccount()
         self.paper = PaperBroker(self.md.last, self._on_fill)
         self.live_broker = make_live_adapter(settings)
@@ -113,6 +115,8 @@ class Hub:
                 self.md.tick(dt)
                 prices = self.prices()
                 self.paper.on_prices(prices)
+                for ev in self.tsig.on_prices(prices):
+                    await self.signal_event(ev)
                 today = date.today().isoformat()
                 if today != self._day:
                     self.prop.end_of_day(prices, today)
@@ -131,6 +135,8 @@ class Hub:
                 self.engine.news_scores = self.news.scores()
                 self.engine.compute_all()
                 rows = self.rows()
+                for ev in self.tsig.generate(self):
+                    await self.signal_event(ev)
                 new = self.alerts.evaluate(self.engine.snapshots, rows)
                 new += self.prop_alerts()
                 await self.broadcast({"type": "signals", "rows": list(rows.values())})
@@ -138,6 +144,16 @@ class Hub:
                     await self.broadcast({"type": "alert", "alert": a.to_dict()})
             except Exception:  # noqa: BLE001
                 log.exception("signal loop error")
+
+    async def signal_event(self, ev: dict) -> None:
+        """Trade-signal lifecycle event -> websocket + alert feed."""
+        s = ev["signal"]
+        sev = {"created": "INFO", "activated": "CRITICAL", "tp1": "WARN", "closed": "WARN"}[ev["event"]]
+        a = self.alerts.push_external(s["symbol"], "TRADE", sev, ev["text"][:160], f"{s['name']} · {s['timeframe']} · {s['horizon']}",
+                                      key=f"tsig:{s['id']}:{ev['event']}", cooldown=0)
+        await self.broadcast({"type": "tsignal", **ev})
+        if a:
+            await self.broadcast({"type": "alert", "alert": a.to_dict()})
 
     async def news_loop(self) -> None:
         """Poll news sources; push new classified items and 2-3 star alerts to every client."""
@@ -331,6 +347,52 @@ def intraday_research(symbol: str, slip_ticks: float = 1.0):
 def intraday_topdown(symbol: str):
     from .intraday import topdown as td
     return _clean(td.topdown(hub.md, _sym(symbol)))
+
+
+# ---------------------------------------------------------------------- trade signals
+@app.get("/api/tsignals")
+async def tsignals(status: str | None = None, symbol: str | None = None, limit: int = 200):
+    if symbol:
+        _sym(symbol)
+    return _clean(hub.tsig.list(status, symbol, min(limit, 500)))
+
+
+@app.get("/api/tsignals/stats")
+async def tsignal_stats():
+    return _clean(hub.tsig.stats())
+
+
+@app.post("/api/tsignals/{sid}/dismiss")
+async def tsignal_dismiss(sid: str):
+    ev = hub.tsig.dismiss(sid)
+    if not ev:
+        raise HTTPException(404, "No open signal with that id")
+    await hub.signal_event(ev)
+    return _clean(ev["signal"])
+
+
+@app.post("/api/tsignals/{sid}/paper")
+async def tsignal_paper(sid: str, use_micro: bool = False):
+    """Execute a signal on the paper account as a market bracket order (stop + TP2 as OCO)."""
+    s = hub.tsig.signals.get(sid)
+    if not s or s["status"] not in ("PENDING", "ACTIVE"):
+        raise HTTPException(404, "No open signal with that id")
+    sym = s["size"]["micro"]["symbol"] if use_micro and s["size"].get("micro") else s["symbol"]
+    qty = max(1, (s["size"]["micro"]["contracts"] if use_micro and s["size"].get("micro") else s["size"]["contracts"]))
+    c = universe.get(sym)
+    last = hub.md.last(sym)
+    stop_ticks = max(1, int(round(abs(last - s["stop"]) / c.tick_size)))
+    target_ticks = max(1, int(round(abs(s["tp2"] - last) / c.tick_size)))
+    body = OrderIn(symbol=sym, side="BUY" if s["side"] > 0 else "SELL", qty=qty, stop_ticks=stop_ticks,
+                   target_ticks=target_ticks)
+    return await place_order(body)
+
+
+@app.post("/api/tsignals/test-notify")
+async def tsignal_test_notify():
+    from .tradesignals import notify
+    sent = notify.push("test", "Test notification from the Commodities Desk Terminal", {"event": "test"}, force=True)
+    return {"sent": sent, "channels": notify.channels()}
 
 
 # ---------------------------------------------------------------------- news

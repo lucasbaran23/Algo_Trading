@@ -39,6 +39,7 @@ Run the tests with `cd backend && python -m pytest -q`.
 
 | Key | Screen | What it shows |
 |---|---|---|
+| ◆ (`TS`) | TRADE SIGNALS | Live trade signals with entry, stop loss, TP1/TP2, strategy, timeframe, confidence and evidence grade; lifecycle tracking, notifications and a track record |
 | ◆ (`IR`) | INTRADAY RESEARCH | Top-down W→D→4H→1H→15m→5m→1m analysis; research-backed day-trade strategies with the optimal timeframe chosen in-sample and validated out-of-sample |
 | ◆ (`DT`) | DAY-TRADE INSIDER | Landing page. Answers "what do I need to know today to day trade this market?": game plan, key levels, volume profile, regime, expected move, catalysts, ranked playbook, risk plan |
 | F1 | MONITOR | Watchlist with swing/day composites, COT index and 5-day up-probability. Daily or 1-min candles with pivots, VWAP and a 20-day forecast cone |
@@ -172,6 +173,42 @@ The day-trade setups are tested on daily bars with the standard OHLC path model 
 open→low→high→close, down days open→high→low→close). This is an approximation, so verify a setup on intraday
 data before risking money on it.
 
+## Trade signals (`TS`)
+
+Every 15 seconds the engine scans all markets and turns the analytics into concrete trade plans:
+
+| Setup | Style · timeframe | When | Evidence |
+|---|---|---|---|
+| Prior-day high/low breakout | Breakout · 15m | trending regime, yesterday's extreme untouched | C |
+| VWAP pullback in trend | Trend · 5m | trend plus intraday score agree, price extended from VWAP | C |
+| Range fade at S1 / R1 | Reversion · 15m | range-bound regime | C |
+| Opening range breakout (OCO) | Breakout · 15m | after the first 15 minutes, range 0.05–0.6 ADR | B |
+| Intraday momentum into the close | Momentum · 30m | last 30 minutes of the regular session | A |
+| Swing trend + fundamentals | Swing · daily | STRONG swing composite, COT not crowded the same way | A |
+| News catalyst | Event · 5m | fresh ★★★ headline agreeing with the tape | B |
+
+**What each signal includes:**
+* direction, entry type (stop / limit / market) and entry price;
+* stop loss, TP1 and TP2, with reward:risk;
+* risk per contract and size from the prop account's risk budget (full and micro), plus a warning when the
+  stop is too wide for the account;
+* confidence of 1–3 stars, from how many independent confirmations agree: intraday composite, regime, news;
+* the evidence grade and the reasons behind the signal.
+
+**Lifecycle.** PENDING → ACTIVE (entry traded) → TP1 (half off, stop to breakeven) → TARGET / STOPPED /
+BREAKEVEN / TIME, or INVALIDATED / EXPIRED / OCO if it never fills. A gap through the stop counts as a full −1R.
+Results are scored in R. The **track record** is a forward record by setup, it persists across restarts, and
+it is never edited.
+
+**Notifications.**
+* **In the app:** toast, sound and the alert feed.
+* **Desktop:** browser notifications.
+* **Phone:** set `DISCORD_WEBHOOK_URL`, or `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`, or `SIGNAL_WEBHOOK_URL`
+  in `.env`. `NOTIFY_EVENTS` picks which events are pushed.
+
+**Paper trade** places the signal on the paper account as a bracket order (stop + TP2), after the prop-rule checks.
+Signals are rule-generated ideas, not advice. Most intraday setups are grade C.
+
 ## Intraday research (`IR`)
 
 **Top-down analysis.** Each timeframe has a job:
@@ -255,9 +292,9 @@ The UI picks it up automatically.
 
 REST: `/api/watchlist`, `/api/snapshot/{sym}`, `/api/history/{sym}`, `/api/intraday/{sym}`, `/api/cot[/{sym}]`,
 `/api/supply-demand`, `/api/matrix`, `/api/alerts[/rules]`, `/api/prop[/presets|/rules|/reset|/size|/flatten]`,
-`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`, `/api/intraday/{research|topdown}/{sym}`.
+`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`, `/api/intraday/{research|topdown}/{sym}`, `/api/tsignals[/stats|/{id}/dismiss|/{id}/paper|/test-notify]`.
 
-WebSocket: `/ws` streams `tick`, `signals`, `alert`, `fill` and `news` messages. Interactive docs are at `/docs`.
+WebSocket: `/ws` streams `tick`, `signals`, `alert`, `fill`, `news` and `tsignal` messages. Interactive docs are at `/docs`.
 
 ## Layout
 
@@ -269,6 +306,7 @@ backend/app/
   news/feeds.py, classifier.py, llm.py, service.py  RSS + sim feeds, rule & Claude classifiers, scoring
   daytrade/calendar.py, analytics.py, playbook.py, insider.py  report calendar, regime/profile/ranges, setups, briefing
   data/intraday.py; intraday/strategies.py, research.py, topdown.py  1-min data (CSV or sim), research strategies, validation, top-down
+  tradesignals/setups.py, manager.py, notify.py  trade-signal detectors, lifecycle + track record, Discord/Telegram/webhook
   alerts.py                     built-in + user rules, dedup/cooldown
   backtest/strategies.py, engine.py  strategy library; simulator, metrics, optimiser, walk-forward, Monte Carlo
   prop/rules.py, brokers.py     prop rule engine, paper/Tradovate/ProjectX adapters

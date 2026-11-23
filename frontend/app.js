@@ -459,6 +459,7 @@ const VIEWS = {
       ["ALRT CL > 70 / ALRT NG SWING < -50", "Create a custom alert (field defaults to LAST)"],
       ["FLAT", "Flatten all paper positions"],
       ["DT / INSIDER, CL DT", "Day-Trade Insider: today's game plan, levels, volume profile, regime, catalysts, ranked playbook, risk plan"],
+      ["TS / TRADES", "Trade signals: entry, stop loss, TP1/TP2, strategy, confidence, live status, notifications, track record"],
       ["IR / RESEARCH, ES IR", "Intraday research: top-down W→D→4H→1H→15m→5m→1m, research-backed strategies, optimal timeframe with out-of-sample validation"],
       ["BT / BACKTEST (F9)", "Backtest lab: run, compare, optimise, walk-forward, Monte Carlo"],
       ["NEWS (F10) / CL NEWS", "News feed with LONG/SHORT signal and ★–★★★ importance per market"],
@@ -476,7 +477,7 @@ const VIEWS = {
 async function renderView() {
   destroyCharts();
   document.querySelectorAll("#fkeys button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.view));
-  document.body.classList.toggle("wide", ["BT", "DT", "IR"].includes(S.view)); // these use the detail column too
+  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS"].includes(S.view)); // these use the detail column too
   const v = $("#view");
   v.innerHTML = "";
   try {
@@ -569,7 +570,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);
@@ -635,9 +636,12 @@ function connect() {
       feed.insertAdjacentHTML("afterbegin", alertRow(m.alert, true));
       while (feed.children.length > 80) feed.lastChild.remove();
       $("#alertCount").textContent = `${S.alerts.length} today`;
-      if (m.alert.severity !== "INFO" || m.alert.symbol === S.sel) toast(m.alert.title, m.alert.detail, m.alert.severity);
+      // trade-signal events have their own richer toast (see tsignals.js)
+      if (m.alert.kind !== "TRADE" && (m.alert.severity !== "INFO" || m.alert.symbol === S.sel)) toast(m.alert.title, m.alert.detail, m.alert.severity);
     } else if (m.type === "fill") {
       refreshPropView();
+    } else if (m.type === "tsignal" && typeof onTradeSignal === "function") {
+      onTradeSignal(m);
     } else if (m.type === "news" && typeof onNews === "function") {
       onNews(m.items);
     }

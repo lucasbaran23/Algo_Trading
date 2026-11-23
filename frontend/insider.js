@@ -200,6 +200,7 @@ function dtRender() {
   const keep = v.scrollTop;
   v.innerHTML = `<div class="dt">${dtHeader(d)}
     ${dtTopdown(d)}
+    ${typeof TS !== "undefined" && TS.open.some((x) => x.symbol === d.data_symbol) ? `<div class="box"><div class="sec">LIVE TRADE SIGNALS · ${d.data_symbol}</div><div class="ts-grid">${TS.open.filter((x) => x.symbol === d.data_symbol).map(tsCard).join("")}</div></div>` : ""}
     <div class="dt-row dt-r1">${dtPlan(d)}</div>
     <div class="dt-row dt-r3">${dtLadder(d)}${dtProfile(d)}${dtRange(d)}</div>
     <div class="dt-row dt-r2">${dtCatalysts(d)}${dtPlaybook(d)}</div>
