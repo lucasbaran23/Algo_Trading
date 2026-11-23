@@ -460,6 +460,7 @@ const VIEWS = {
       ["FLAT", "Flatten all paper positions"],
       ["DT / INSIDER, CL DT", "Day-Trade Insider: today's game plan, levels, volume profile, regime, catalysts, ranked playbook, risk plan"],
       ["GAS / NGD", "Nat Gas Desk (MVP market): contracts & roll, next-session expected range, weather (HDD), storage, seasonality by year/month/weekday/expiry"],
+      ["GS / SCALP", "Gamma scalp lab: backtest long/short ATM straddles delta-hedged with futures; hedge-frequency and IV sweeps"],
       ["OPT / GEX, ES OPT", "Options & gamma: OI/volume by strike, expiries, put/call, skew, max pain, dealer gamma, flip, walls (NG, ES, NQ, CL, GC)"],
       ["TS / TRADES", "Trade signals: entry, stop loss, TP1/TP2, strategy, confidence, live status, notifications, track record"],
       ["IR / RESEARCH, ES IR", "Intraday research: top-down W→D→4H→1H→15m→5m→1m, research-backed strategies, optimal timeframe with out-of-sample validation"],
@@ -479,7 +480,7 @@ const VIEWS = {
 async function renderView() {
   destroyCharts();
   document.querySelectorAll("#fkeys button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.view));
-  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS", "NGD", "OPT"].includes(S.view)); // these use the detail column too
+  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS", "NGD", "OPT", "GS"].includes(S.view)); // these use the detail column too
   const v = $("#view");
   v.innerHTML = "";
   try {
@@ -572,7 +573,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS", NGD: "NGD", GAS: "NGD", NATGAS: "NGD", OPT: "OPT", OPTIONS: "OPT", GEX: "OPT" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS", NGD: "NGD", GAS: "NGD", NATGAS: "NGD", OPT: "OPT", OPTIONS: "OPT", GEX: "OPT", GS: "GS", SCALP: "GS", GAMMA: "GS" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);

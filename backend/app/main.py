@@ -389,6 +389,29 @@ def options(symbol: str, mode: str | None = None):
     return _clean(oa.analyse(chain, meta, mode))
 
 
+@app.get("/api/backtest/gammascalp")
+def bt_gammascalp(symbol: str = "NG", dte: int = 5, side: int = 1, iv_mode: str = "rv_mult", iv_value: float = 1.1,
+                  slip_ticks: float = 1.0, opt_spread_vol: float = 0.01):
+    """Options gamma-scalping backtest: hedge-frequency sweep, implied-vol sweep (breakeven) and cycle detail."""
+    from .options import chains, gammascalp as gs
+    sym = universe.get(_sym(symbol)).data_symbol
+    if sym not in chains.SUPPORTED:
+        raise HTTPException(404, f"Supported: {', '.join(chains.SUPPORTED)}")
+    if dte not in (1, 2, 5, 10, 20) or side not in (1, -1) or iv_mode not in ("rv_mult", "fixed", "csv"):
+        raise HTTPException(400, "dte in 1,2,5,10,20; side 1 or -1; iv_mode rv_mult|fixed|csv")
+    return _clean(gs.sweep(hub.md, sym, dte, iv_mode, iv_value, side, slip_ticks=slip_ticks, opt_spread_vol=opt_spread_vol,
+                           commission=hub.prop.rules.commission_per_side))
+
+
+@app.get("/api/backtest/gamma-regime")
+def bt_gamma_regime(symbol: str = "ES"):
+    from .options import chains, gammascalp as gs
+    sym = universe.get(_sym(symbol)).data_symbol
+    if sym not in chains.SUPPORTED:
+        raise HTTPException(404, f"Supported: {', '.join(chains.SUPPORTED)}")
+    return _clean(gs.regime_split(hub.md, sym, hub.prop.rules.commission_per_side))
+
+
 @app.get("/api/natgas/contracts")
 def natgas_contracts():
     from .natgas import contracts as ngc

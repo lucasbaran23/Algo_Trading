@@ -41,6 +41,7 @@ Run the tests with `cd backend && python -m pytest -q`.
 |---|---|---|
 | ◆ (`GAS`) | NAT GAS DESK | **MVP market.** Contract strip, expiry and roll; next-session expected range (weekday × expiry × holiday); weather (gas-weighted HDD forecast vs normal); EIA storage; seasonality from year × month down to weekday and expiry cycle; this month's paths in past years; weather vs price |
 | ◆ (`OPT`) | OPTIONS & GAMMA | Open interest and volume by strike, expiries, put/call ratios, ATM IV, 25Δ skew, straddle-implied move, max pain, dealer gamma (GEX) profile, flip, call/put walls, hedge flow per 1% (NG, ES, NQ, CL, GC) |
+| ◆ (`GS`) | GAMMA SCALP LAB | Backtest buying or selling ATM straddles and delta-hedging them with futures: hedge-frequency sweep, IV breakeven, P&L vs realised − implied vol, and day-trading results split by dealer gamma regime (NG, ES, NQ, CL, GC) |
 | ◆ (`TS`) | TRADE SIGNALS | Live trade signals with entry, stop loss, TP1/TP2, strategy, timeframe, confidence and evidence grade; lifecycle tracking, notifications and a track record |
 | ◆ (`IR`) | INTRADAY RESEARCH | Top-down W→D→4H→1H→15m→5m→1m analysis; research-backed day-trade strategies with the optimal timeframe chosen in-sample and validated out-of-sample |
 | ◆ (`DT`) | DAY-TRADE INSIDER | Landing page. Answers "what do I need to know today to day trade this market?": game plan, key levels, volume profile, regime, expected move, catalysts, ranked playbook, risk plan |
@@ -248,6 +249,33 @@ Options levels also feed the Insider's level ladder and game plan.
   Scraping Barchart's website is against its terms.
 * ES/NQ in live mode: CBOE's free delayed SPX/NDX chains, scaled to the futures.
 * Otherwise a labelled simulated chain with the right skew sign: NG winter call skew, index put skew.
+
+## Gamma scalp lab (`GS`)
+
+![Gamma scalp lab](docs/screenshots/30-gamma-scalp-ng.png)
+
+Each cycle buys (long gamma) or sells (short gamma) one at-the-money straddle at the regular-session
+open, priced with Black-76, holds it 1–20 sessions to expiry, and hedges its delta with futures
+on 1-minute bars. P&L ≈ ½·Γ·F²·(σ²realised − σ²implied)·t, minus costs.
+
+* **Hedge-frequency sweep:** every 5 min, 15 min, hourly, once at the close, or on a ±0.25 delta band.
+  Each hedge pays slippage plus commission; the option pays half its bid/ask (in vol points) on entry.
+* **IV sweep and breakeven:** options priced at realised vol × 0.8 … 1.3. The screen finds the
+  multiplier where the trade stops paying, so you can compare it with today's ATM IV on `OPT`.
+* **Scatter of P&L vs realised − implied vol:** one dot per cycle.
+* **Day trading by gamma regime:** ORB, intraday momentum, noise-area and RSI(2) results, split by
+  positive vs negative dealer gamma on the prior day.
+
+**The IV is an assumption.** There is no free history of futures-option implied vol, so by default
+the IV is the trailing 20-session realised vol (15-minute returns) × a multiplier, using only past
+data. For real conclusions, supply your own data:
+* `backend/data/options/{SYMBOL}_iv.csv` with columns date, iv (decimal or %), then pick "From CSV";
+* `backend/data/options/{SYMBOL}_gex.csv` with columns date, gex for the regime split.
+
+Sources: CME QuikStrike, Databento, or a broker. Results on simulated bars only show how the method works.
+
+API: `GET /api/backtest/gammascalp?symbol=NG&dte=5&side=1&iv_mode=rv_mult&iv_value=1.1&slip_ticks=1&opt_spread_vol=0.01`
+and `GET /api/backtest/gamma-regime?symbol=ES`.
 
 ## Trade signals (`TS`)
 

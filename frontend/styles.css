@@ -403,3 +403,11 @@ label.opt { display: flex; gap: 4px; align-items: center; color: var(--ink-2); c
   .foot .muted { display: none; }
   .al { grid-template-columns: 54px 58px 1fr; } .al .s { display: none; }
 }
+
+/* Gamma scalp lab */
+.gs-ctl { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.gs-ctl label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 11px; }
+.gs-ctl .dt-switch { margin: 0; }
+.tbl tr.hl td { background: color-mix(in srgb, var(--s1) 12%, transparent); }
+.gs-ctl input, .gs-ctl select { background: var(--surface-3); border: 1px solid var(--line); color: var(--ink); padding: 3px 6px; border-radius: 5px; font-family: var(--font-num); font-size: 12px; }
+.gs-ctl input:focus, .gs-ctl select:focus { outline: none; border-color: var(--accent); }

@@ -72,7 +72,7 @@ def daily_history(c: Contract, seed: int, today: date | None = None) -> pd.DataF
         z_on = z_on * f / np.sqrt(np.mean(f ** 2))
     for i in range(n):
         if i:
-            var[i] = omega + alpha * shocks[i - 1] ** 2 + beta * var[i - 1]
+            var[i] = min(omega + alpha * shocks[i - 1] ** 2 + beta * var[i - 1], 4 * daily_vol ** 2)  # cap runaway clusters
         shocks[i] = np.sqrt(var[i]) * z[i]
 
     # Regime-switching drift (trend phases), mean reversion to a slow anchor, seasonality
@@ -80,7 +80,7 @@ def daily_history(c: Contract, seed: int, today: date | None = None) -> pd.DataF
     regime = 0.0
     for i in range(1, n):
         if rng.random() < 1 / 60:
-            regime = rng.normal(0, daily_vol * 0.18)
+            regime = rng.normal(0, daily_vol * 0.12)
         drift[i] = regime
     month_f = dates.month.values + dates.day.values / 31.0
     season = 0.06 * seasonal_factor(month_f, c.season_peak_month)
