@@ -349,6 +349,42 @@ def intraday_topdown(symbol: str):
     return _clean(td.topdown(hub.md, _sym(symbol)))
 
 
+# ---------------------------------------------------------------------- natural gas desk
+@app.get("/api/natgas/outlook")
+def natgas_outlook():
+    from .natgas import seasonality as ngs
+    from .tradesignals.setups import now_et
+    return _clean(ngs.outlook(hub.md, settings, now_et()))
+
+
+@app.get("/api/natgas/seasonality")
+def natgas_seasonality():
+    from .natgas import seasonality as ngs
+    out = {k: v for k, v in ngs.build(hub.md, settings).items() if not k.startswith("_")}
+    return _clean(out)
+
+
+@app.get("/api/natgas/weather")
+def natgas_weather():
+    from .natgas import weather as wx
+    return _clean({k: v for k, v in wx.weather(hub.md, settings).items() if not k.startswith("_")})
+
+
+@app.get("/api/natgas/contracts")
+def natgas_contracts():
+    from .natgas import contracts as ngc
+    from .tradesignals.setups import now_et
+    from .daytrade import calendar as dcal
+    day = dcal.next_session_date(now_et())
+    nxt = []
+    y, m = ngc.front_contract(day)
+    for _ in range(6):
+        nxt.append({"code": ngc.code(y, m), "month": ngc.MONTH_NAMES[m - 1], "year": y,
+                    "last_trade": ngc.last_trade_date(y, m).isoformat()})
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return {"session": day.isoformat(), "info": ngc.contract_info(day), "strip": nxt}
+
+
 # ---------------------------------------------------------------------- trade signals
 @app.get("/api/tsignals")
 async def tsignals(status: str | None = None, symbol: str | None = None, limit: int = 200):

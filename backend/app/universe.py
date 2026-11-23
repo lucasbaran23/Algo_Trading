@@ -69,6 +69,8 @@ CONTRACTS: list[Contract] = [
     # Micros (popular with prop accounts) share data with the parent
     Contract("MCL", "Micro WTI Crude", "Energy", "NYMEX", 0.01, 100, "MCL=F", "067651", 68.0, 0.34, 6, parent="CL"),
     Contract("MGC", "Micro Gold", "Metals", "COMEX", 0.1, 10, "MGC=F", "088691", 4100.0, 0.18, 1, parent="GC"),
+    Contract("QG", "E-mini Henry Hub Natural Gas", "Energy", "NYMEX", 0.005, 2500, "QG=F", "023651", 3.40, 0.60, 1, parent="NG"),
+    Contract("MNG", "Micro Henry Hub Natural Gas", "Energy", "NYMEX", 0.001, 1000, "MNG=F", "023651", 3.40, 0.60, 1, parent="NG"),
     Contract("MES", "Micro E-mini S&P 500", "Indices", "CME", 0.25, 5, "MES=F", "13874A", 6800.0, 0.17, 12, parent="ES"),
     Contract("MNQ", "Micro E-mini Nasdaq-100", "Indices", "CME", 0.25, 2, "MNQ=F", "209742", 25000.0, 0.22, 12,
              parent="NQ"),

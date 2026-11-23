@@ -2,7 +2,7 @@
 "use strict";
 
 const S = {
-  universe: {}, rows: {}, alerts: [], prop: null, sel: "ES", view: "DT", ticketPreset: null,
+  universe: {}, rows: {}, alerts: [], prop: null, sel: "NG", view: "NGD", ticketPreset: null,
   snap: null, charts: [], mainSeries: null, chartMode: "D", ws: null, tapeAt: 0,
 };
 const LWC = window.LightweightCharts;
@@ -459,6 +459,7 @@ const VIEWS = {
       ["ALRT CL > 70 / ALRT NG SWING < -50", "Create a custom alert (field defaults to LAST)"],
       ["FLAT", "Flatten all paper positions"],
       ["DT / INSIDER, CL DT", "Day-Trade Insider: today's game plan, levels, volume profile, regime, catalysts, ranked playbook, risk plan"],
+      ["GAS / NGD", "Nat Gas Desk (MVP market): contracts & roll, next-session expected range, weather (HDD), storage, seasonality by year/month/weekday/expiry"],
       ["TS / TRADES", "Trade signals: entry, stop loss, TP1/TP2, strategy, confidence, live status, notifications, track record"],
       ["IR / RESEARCH, ES IR", "Intraday research: top-down W→D→4H→1H→15m→5m→1m, research-backed strategies, optimal timeframe with out-of-sample validation"],
       ["BT / BACKTEST (F9)", "Backtest lab: run, compare, optimise, walk-forward, Monte Carlo"],
@@ -477,7 +478,7 @@ const VIEWS = {
 async function renderView() {
   destroyCharts();
   document.querySelectorAll("#fkeys button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.view));
-  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS"].includes(S.view)); // these use the detail column too
+  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS", "NGD"].includes(S.view)); // these use the detail column too
   const v = $("#view");
   v.innerHTML = "";
   try {
@@ -570,7 +571,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS", NGD: "NGD", GAS: "NGD", NATGAS: "NGD" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);

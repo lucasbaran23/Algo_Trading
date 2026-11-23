@@ -26,7 +26,7 @@ from . import notify, setups
 
 log = logging.getLogger(__name__)
 
-MICRO = {"ES": "MES", "NQ": "MNQ", "YM": "MYM", "CL": "MCL", "GC": "MGC"}
+MICRO = {"ES": "MES", "NQ": "MNQ", "YM": "MYM", "CL": "MCL", "GC": "MGC", "NG": "MNG"}
 OPEN = ("PENDING", "ACTIVE")
 
 

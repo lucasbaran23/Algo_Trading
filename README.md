@@ -39,6 +39,7 @@ Run the tests with `cd backend && python -m pytest -q`.
 
 | Key | Screen | What it shows |
 |---|---|---|
+| ◆ (`GAS`) | NAT GAS DESK | **MVP market.** Contract strip, expiry and roll; next-session expected range (weekday × expiry × holiday); weather (gas-weighted HDD forecast vs normal); EIA storage; seasonality from year × month down to weekday and expiry cycle; this month's paths in past years; weather vs price |
 | ◆ (`TS`) | TRADE SIGNALS | Live trade signals with entry, stop loss, TP1/TP2, strategy, timeframe, confidence and evidence grade; lifecycle tracking, notifications and a track record |
 | ◆ (`IR`) | INTRADAY RESEARCH | Top-down W→D→4H→1H→15m→5m→1m analysis; research-backed day-trade strategies with the optimal timeframe chosen in-sample and validated out-of-sample |
 | ◆ (`DT`) | DAY-TRADE INSIDER | Landing page. Answers "what do I need to know today to day trade this market?": game plan, key levels, volume profile, regime, expected move, catalysts, ranked playbook, risk plan |
@@ -173,6 +174,44 @@ The day-trade setups are tested on daily bars with the standard OHLC path model 
 open→low→high→close, down days open→high→low→close). This is an approximation, so verify a setup on intraday
 data before risking money on it.
 
+## Nat Gas Desk (`GAS`): the MVP market
+
+Natural gas is the primary market. The terminal opens on this desk, and NG is the default symbol everywhere.
+Micro (MNG, 1,000 MMBtu, $1/tick) and E-mini (QG, 2,500 MMBtu, $12.50/tick) are used for prop-sized risk.
+
+* **Contracts & roll.** NYMEX rule: trading ends 3 business days before the delivery month, with U.S. holidays
+  skipped. Example: NGZ26 last trades Wed Nov 25, 2026, because of Thanksgiving. The desk also shows options
+  (LNE) and micro expiry, a 6-month strip, and a "trade the next contract" warning in the expiry window.
+* **Next-session outlook.** Expected range = recent 20-day realised range × weekday factor (for this month, shrunk
+  toward the all-month factor) × expiry-cycle factor × holiday factor. It is shown in %, in $ per NG/QG/MNG, in
+  ticks, and as the 80th-percentile "big day". Plain-language notes cover:
+  * the roll and expiry;
+  * options expiry;
+  * EIA Thursday (and holiday-week changes);
+  * Monday weather repricing;
+  * days next to holidays;
+  * the seasonal context.
+* **Seasonality from macro to micro:**
+  * year × month returns;
+  * a month profile with the front contract, average and % up, annualised vol, and average range in % / $ / ticks;
+  * this month's path in each past year vs the average and this year;
+  * average range by weekday × month;
+  * range by sessions-to-expiry;
+  * day before / after holidays.
+
+  Every historical day is labelled with its front contract, and roll-gap days are excluded from returns.
+* **Weather.** Heating degree days, weighted by gas demand across 12 cities, plus a 14-day forecast vs the 10-year
+  normal, with a bias in the heating season. A table shows each past year's HDD anomaly for this month vs the
+  move. Live data comes from Open-Meteo (archive + forecast). **Confirm Open-Meteo's commercial terms before
+  selling.** Past years use observed weather; archived *forecasts* need a vendor or Open-Meteo's
+  historical-forecast APIs.
+* **Storage.** EIA weekly working gas vs the 5-year average, plus the latest change vs normal.
+
+The simulator reproduces NG's structural volatility patterns (winter, Thursday, Monday, pre-expiry) but no
+directional edge. Its weather-to-price link is illustrative and labelled SIM. With `DATA_MODE=live`, the
+analysis runs on about 10 years of the continuous NG=F series. For contract-by-contract studies (for example,
+December contracts only), load per-contract history from a vendor.
+
 ## Trade signals (`TS`)
 
 Every 15 seconds the engine scans all markets and turns the analytics into concrete trade plans:
@@ -292,7 +331,7 @@ The UI picks it up automatically.
 
 REST: `/api/watchlist`, `/api/snapshot/{sym}`, `/api/history/{sym}`, `/api/intraday/{sym}`, `/api/cot[/{sym}]`,
 `/api/supply-demand`, `/api/matrix`, `/api/alerts[/rules]`, `/api/prop[/presets|/rules|/reset|/size|/flatten]`,
-`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`, `/api/intraday/{research|topdown}/{sym}`, `/api/tsignals[/stats|/{id}/dismiss|/{id}/paper|/test-notify]`.
+`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`, `/api/intraday/{research|topdown}/{sym}`, `/api/tsignals[/stats|/{id}/dismiss|/{id}/paper|/test-notify]`, `/api/natgas/{outlook|seasonality|weather|contracts}`.
 
 WebSocket: `/ws` streams `tick`, `signals`, `alert`, `fill`, `news` and `tsignal` messages. Interactive docs are at `/docs`.
 
@@ -307,6 +346,7 @@ backend/app/
   daytrade/calendar.py, analytics.py, playbook.py, insider.py  report calendar, regime/profile/ranges, setups, briefing
   data/intraday.py; intraday/strategies.py, research.py, topdown.py  1-min data (CSV or sim), research strategies, validation, top-down
   tradesignals/setups.py, manager.py, notify.py  trade-signal detectors, lifecycle + track record, Discord/Telegram/webhook
+  natgas/contracts.py, seasonality.py, weather.py  NG contract calendar, seasonality + next-session outlook, HDD weather
   alerts.py                     built-in + user rules, dedup/cooldown
   backtest/strategies.py, engine.py  strategy library; simulator, metrics, optimiser, walk-forward, Monte Carlo
   prop/rules.py, brokers.py     prop rule engine, paper/Tradovate/ProjectX adapters

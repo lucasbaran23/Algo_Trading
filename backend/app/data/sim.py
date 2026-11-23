@@ -53,6 +53,18 @@ def daily_history(c: Contract, seed: int, today: date | None = None) -> pd.DataF
     t5 = lambda: rng.standard_t(df=5, size=n) / np.sqrt(5 / 3)  # noqa: E731
     z_on, z_id = t5(), t5()
     z = np.sqrt(0.3) * z_on + np.sqrt(0.7) * z_id
+    if c.data_symbol == "NG":
+        # Structural natural-gas volatility patterns (size of moves only, no direction):
+        # winter demand season, Thursday EIA storage report, Monday weekend-weather repricing,
+        # and the last sessions before contract expiry.
+        from ..natgas.contracts import label_days
+        month_f = np.array([1.35, 1.25, 1.1, 0.95, 0.9, 0.85, 0.9, 0.9, 0.95, 1.05, 1.2, 1.35])
+        wd_f = np.array([1.12, 0.92, 0.95, 1.3, 0.9])
+        tdte = np.array([x["tdte"] for x in label_days(dates)])
+        exp_f = np.where(tdte <= 2, 1.3, np.where(tdte <= 5, 1.12, 1.0))
+        f = month_f[dates.month - 1] * wd_f[np.minimum(dates.weekday, 4)] * exp_f
+        z = z * f / np.sqrt(np.mean(f ** 2))
+        z_on = z_on * f / np.sqrt(np.mean(f ** 2))
     for i in range(n):
         if i:
             var[i] = omega + alpha * shocks[i - 1] ** 2 + beta * var[i - 1]

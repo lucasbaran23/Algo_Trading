@@ -17,7 +17,7 @@ from .. import universe
 from . import analytics, calendar, playbook
 
 ET = ZoneInfo("America/New_York")
-MICRO = {"ES": "MES", "NQ": "MNQ", "YM": "MYM", "CL": "MCL", "GC": "MGC"}
+MICRO = {"ES": "MES", "NQ": "MNQ", "YM": "MYM", "CL": "MCL", "GC": "MGC", "NG": "MNG"}
 _BT_CACHE: dict[tuple, tuple[float, dict]] = {}
 
 TIME_OF_DAY = {
@@ -245,6 +245,15 @@ def build(hub, symbol: str) -> dict:
         res, research_line = None, ""
     if tdn:
         plan.insert(1, f"Top-down: {tdn['setup']} (alignment {tdn['alignment']:+.0f}). {tdn['plan']} {tdn['exec_note']}")
+    natgas = None
+    if sym == "NG":                                   # the MVP market gets its contract / seasonality / weather read
+        try:
+            from ..natgas import seasonality as ngs, weather as ngw
+            natgas = ngs.outlook(md, hub.md.settings, now_et)
+            wxs = ngw.weather(md, hub.md.settings)
+            plan[0:0] = natgas["bullets"][:3] + [f"Weather ({wxs['source']}): {wxs['bias']}. {wxs['bias_why']}"]
+        except Exception:  # noqa: BLE001
+            natgas = None
     if research_line:
         plan.append(research_line)
 
@@ -279,4 +288,5 @@ def build(hub, symbol: str) -> dict:
                      "rt_cost": round(bt["rt_cost"], 2), "regime": reg["kind"]},
         "risk": risk, "plan": plan, "checklist": checklist,
         "topdown": {k: tdn[k] for k in ("rows", "alignment", "setup", "exec_tf")} if tdn else None,
+        "natgas": {k: natgas[k] for k in ("contract", "expected", "factors")} if natgas else None,
     }

@@ -15,7 +15,7 @@
     <div class="brand">CMDTY<span>//DESK</span></div>
     <form id="cmdForm" class="cmd" autocomplete="off">
       <span class="prompt">&gt;</span>
-      <input id="cmd" spellcheck="false" placeholder="ES · NQ NEWS · CL COT · GC FCST · BUY 2 MES · ALRT CL > 70 · HELP" aria-label="Command line">
+      <input id="cmd" spellcheck="false" placeholder="GAS · NG DT · NG IR · BUY 3 MNG · TS · ES · CL COT · HELP" aria-label="Command line">
       <button type="submit" class="go">GO</button>
     </form>
     <div class="clocks" id="clocks"></div>
@@ -29,6 +29,7 @@
   <div class="tape" aria-hidden="true"><div id="tape" class="tape-inner"></div></div>
 
   <nav class="fkeys" id="fkeys">
+    <button data-view="NGD" class="hero"><b>◆</b>NAT GAS DESK</button>
     <button data-view="DT" class="hero"><b>◆</b>DAY-TRADE INSIDER</button>
     <button data-view="TS" class="hero"><b>◆</b>TRADE SIGNALS <span class="cnt"></span></button>
     <button data-view="IR" class="hero"><b>◆</b>INTRADAY RESEARCH</button>
@@ -86,5 +87,6 @@
   <script src="/static/insider.js"></script>
   <script src="/static/research.js"></script>
   <script src="/static/tsignals.js"></script>
+  <script src="/static/natgas.js"></script>
 </body>
 </html>
