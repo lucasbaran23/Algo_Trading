@@ -98,6 +98,8 @@ class SignalManager:
                 "news_items": [{"title": it["title"], "direction": s["direction"]} for it in recent
                                for s in it["signals"] if s["symbol"] == sym and s["stars"] == 3],
                 "natgas": self._ng_state(hub) if sym == "NG" else None,
+                "sigma": self._sigma_state(hub, sym, c, now_et),
+                "optlv": self._opt_levels(hub, sym),
             }
             for plan in setups.detect(ctx):
                 key = (sym, plan["setup"], plan["side"] if plan["setup"] == "orb" else 0)
@@ -115,6 +117,28 @@ class SignalManager:
         if events:
             self.save()
         return events
+
+    def _sigma_state(self, hub, sym, c, now_et) -> dict | None:
+        try:
+            from ..daytrade import calendar as cal
+            from ..intraday import extremes
+            ref = extremes.live_ref(hub.md, sym)
+            if not ref:
+                return None
+            o_s, c_s = (setups._hm(x) for x in cal.session_window(c.sector, sym))
+            mins = now_et.hour * 60 + now_et.minute
+            frac_t = (mins - o_s) / (c_s - o_s)
+            z = extremes.live_z(ref, hub.md.sessions[sym].last, frac_t)
+            return {"z": z, "sd_px": ref["sd"] * ref["pc"], "pc": ref["pc"], "in_window": 15 <= mins - o_s <= (c_s - o_s) - 45}
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _opt_levels(self, hub, sym) -> dict | None:
+        from ..options import chains
+        if sym not in chains.SUPPORTED:
+            return None
+        from ..options.levels import quick_levels
+        return quick_levels(hub.md, sym)
 
     def _ng_state(self, hub) -> dict | None:
         try:

@@ -412,6 +412,31 @@ def bt_gamma_regime(symbol: str = "ES"):
     return _clean(gs.regime_split(hub.md, sym, hub.prop.rules.commission_per_side))
 
 
+@app.get("/api/strategy/sigma/{symbol}")
+def strat_sigma(symbol: str, ref: str = "month", k: float = 2.5):
+    from .intraday import extremes
+    sym = universe.get(_sym(symbol)).data_symbol
+    if ref not in extremes.REFS:
+        raise HTTPException(400, f"ref must be one of {', '.join(extremes.REFS)}")
+    if not 1.0 <= k <= 5.0:
+        raise HTTPException(400, "k must be between 1 and 5")
+    rules = hub.prop.rules
+    return _clean({"today": extremes.today(hub.md, sym, ref, k),
+                   "backtest": extremes.backtest(hub.md, sym, ref, rules.commission_per_side)})
+
+
+@app.get("/api/strategy/optlevels/{symbol}")
+def strat_optlevels(symbol: str, mode: str | None = None):
+    from .options import chains, levels
+    sym = universe.get(_sym(symbol)).data_symbol
+    if sym not in chains.SUPPORTED:
+        raise HTTPException(404, f"Supported: {', '.join(chains.SUPPORTED)}")
+    if mode not in (None, "standard", "short_calls"):
+        raise HTTPException(400, "mode must be standard or short_calls")
+    return _clean({"playbook": levels.playbook(hub.md, sym, mode),
+                   "backtest": levels.backtest(hub.md, sym, hub.prop.rules.commission_per_side)})
+
+
 @app.get("/api/natgas/contracts")
 def natgas_contracts():
     from .natgas import contracts as ngc

@@ -77,10 +77,13 @@ def simulate(symbol: str, price: float, ann_vol: float, today: date, seed: int =
     step = _strike_step(symbol, price)
     winter = today.month in (11, 12, 1, 2, 3)
     rows = []
+    # positioning drifts day to day: tilt calls vs puts so the dealer-gamma sign isn't fixed
+    day_call, day_put = rng.lognormal(0, 0.35), rng.lognormal(0, 0.35)
     for k, ex in enumerate(_expiries(symbol, today)):
         T = max((ex - today).days, 1) / 365
         width = price * ann_vol * np.sqrt(T) * 3
         strikes = np.arange(np.floor((price - width) / step) * step, price + width + step, step)
+        strikes = strikes[strikes > step / 2]
         size = 1.0 / (1 + 0.6 * k) * (3 if (symbol in ("ES", "NQ") and k == len(_expiries(symbol, today)) - 1) else 1)
         for K in strikes:
             m = np.log(K / price) / (ann_vol * np.sqrt(T))          # standardised moneyness
@@ -96,7 +99,7 @@ def simulate(symbol: str, price: float, ann_vol: float, today: date, seed: int =
             iv = max(0.05, ann_vol * (1 + skew + 0.04 * m * m))
             otm_c = 1.0 if K >= price else 0.45
             otm_p = 1.0 if K <= price else 0.45
-            for typ, tilt, otm in (("C", call_tilt, otm_c), ("P", put_tilt, otm_p)):
+            for typ, tilt, otm in (("C", call_tilt * day_call, otm_c), ("P", put_tilt * day_put, otm_p)):
                 scale = {"NG": 9000, "ES": 2500, "NQ": 700, "CL": 5000, "GC": 1800}.get(symbol, 3000)   # typical OI per strike
                 oi = int(max(0, base * tilt * otm * scale * rng.lognormal(0, 0.35)))
                 vol = int(oi * rng.uniform(0.03, 0.25) * (2.5 if k == 0 else 1))

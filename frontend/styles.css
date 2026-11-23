@@ -411,3 +411,4 @@ label.opt { display: flex; gap: 4px; align-items: center; color: var(--ink-2); c
 .tbl tr.hl td { background: color-mix(in srgb, var(--s1) 12%, transparent); }
 .gs-ctl input, .gs-ctl select { background: var(--surface-3); border: 1px solid var(--line); color: var(--ink); padding: 3px 6px; border-radius: 5px; font-family: var(--font-num); font-size: 12px; }
 .gs-ctl input:focus, .gs-ctl select:focus { outline: none; border-color: var(--accent); }
+.tile b.warn { color: var(--warn); }

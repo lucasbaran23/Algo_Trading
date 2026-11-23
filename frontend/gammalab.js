@@ -7,9 +7,9 @@ const usd = (v) => (v == null ? "—" : (v < 0 ? "-$" : "$") + Math.abs(Math.rou
 const susd = (v) => (v == null ? "—" : (v > 0 ? "+" : "") + usd(v));
 const HEDGE_LABEL = { "5m": "Every 5 min", "15m": "Every 15 min", "60m": "Hourly", close: "Once, at the close", band: "Delta band (±0.25)" };
 
-function gsLine(rows) {
+function gsLine(rows, W = 560) {
   if (!rows.length) return "";
-  const W = 560, H = 200, padL = 58, padB = 20, ys = rows.map((r) => r.value);
+  const H = 200, padL = 58, padB = 20, ys = rows.map((r) => r.value);
   const y0 = Math.min(0, ...ys), y1 = Math.max(0, ...ys), span = y1 - y0 || 1;
   const x = (i) => padL + (i / Math.max(1, rows.length - 1)) * (W - padL - 8), y = (v) => 8 + (1 - (v - y0) / span) * (H - padB - 16);
   const pts = rows.map((r, i) => `${x(i).toFixed(1)},${y(r.value).toFixed(1)}`).join(" ");

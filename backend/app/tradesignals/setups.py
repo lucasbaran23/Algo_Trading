@@ -169,6 +169,64 @@ def detect(ctx: dict) -> list[dict]:
         if p:
             out.append(p)
 
+    # 8. Sigma-extreme fade: the move from yesterday's close is >= 2.5 sigma for this month and time of day,
+    #    and a 5-minute bar has just closed back beyond the previous 5-minute bar (confirmation)
+    sg = ctx.get("sigma")
+    if sg and sg["in_window"] and abs(sg["z"]) >= 2.5 and len(ses["bars"]) >= 10:
+        side = -1 if sg["z"] > 0 else 1
+        b = ses["bars"][-10:]
+        prev5, last5 = b[:5], b[5:]
+        ph, pl = max(x[2] for x in prev5), min(x[3] for x in prev5)
+        conf = (side > 0 and last5[-1][4] > ph) or (side < 0 and last5[-1][4] < pl)
+        if conf:
+            ext = ses["low"] if side > 0 else ses["high"]
+            u = sg["sd_px"]
+            p = _plan(ctx, "sigma_fade", f"{abs(sg['z']):.1f}σ extreme fade", "Reversion", "5m", "Intraday", "C", side, "market",
+                      last, ext - side * 0.1 * u, tp1=ext + side * 0.5 * abs(sg["pc"] - ext), tp2=sg["pc"], expires_in=90 * 60,
+                      reasons=[f"Move from yesterday's close is {sg['z']:+.1f}σ vs this month's history at this time of day",
+                               f"Confirmation: the last 5-minute bar closed {'above' if side > 0 else 'below'} the previous one's {'high' if side > 0 else 'low'}",
+                               "Stop beyond today's extreme; first target halfway back to yesterday's close, second at yesterday's close",
+                               "Evidence: mixed. Extreme moves can keep going (news, weather). Check the backtest on the LEVELS & σ tab"])
+            if p:
+                out.append(p)
+
+    # 9. Options levels: wall fade (dealers long gamma), wall break / flip cross (short gamma)
+    ol = ctx.get("optlv")
+    if ol and ol.get("sd_day"):
+        u = ol["sd_day"]
+        cw, pw = ol.get("call_wall"), ol.get("put_wall")
+        if ol["regime"] == "POSITIVE":
+            if cw and cw - 0.05 * u < last < cw + 0.1 * u:
+                p = _plan(ctx, "opt_wall", "Call-wall fade (long gamma)", "Options levels", "5m", "Intraday", "C", -1, "stop",
+                          cw - 0.05 * u, max(ses["high"], cw) + 0.1 * u, r_mult=(1.0, 1.5), expires_in=2 * 3600,
+                          reasons=[f"Price is at the call wall {ctx['rnd'](cw)}; dealers are modelled long gamma, so they sell strength here",
+                                   "Sell only if a bar closes back below the wall (the stop order is the confirmation)",
+                                   f"Levels from {ol['source']}"])
+                if p:
+                    out.append(p)
+            if pw and pw - 0.1 * u < last < pw + 0.05 * u:
+                p = _plan(ctx, "opt_wall", "Put-wall fade (long gamma)", "Options levels", "5m", "Intraday", "C", 1, "stop",
+                          pw + 0.05 * u, min(ses["low"], pw) - 0.1 * u, r_mult=(1.0, 1.5), expires_in=2 * 3600,
+                          reasons=[f"Price is at the put wall {ctx['rnd'](pw)}; dealers are modelled long gamma, so they buy weakness here",
+                                   "Buy only if a bar closes back above the wall", f"Levels from {ol['source']}"])
+                if p:
+                    out.append(p)
+        else:
+            if pw and pw - 0.1 * u < last < pw + 0.15 * u:
+                p = _plan(ctx, "opt_wall", "Put-wall break (short gamma)", "Options levels", "5m", "Intraday", "C", -1, "stop",
+                          pw - 0.1 * u, pw + 0.15 * u, r_mult=(1.0, 2.0), expires_in=2 * 3600,
+                          reasons=[f"Dealers are modelled short gamma: a break of the put wall {ctx['rnd'](pw)} can make them sell more",
+                                   f"Levels from {ol['source']}"])
+                if p:
+                    out.append(p)
+            if cw and cw - 0.15 * u < last < cw + 0.1 * u:
+                p = _plan(ctx, "opt_wall", "Call-wall break (short gamma)", "Options levels", "5m", "Intraday", "C", 1, "stop",
+                          cw + 0.1 * u, cw - 0.15 * u, r_mult=(1.0, 2.0), expires_in=2 * 3600,
+                          reasons=[f"Dealers are modelled short gamma: a break above the call wall {ctx['rnd'](cw)} can force them to buy",
+                                   f"Levels from {ol['source']}"])
+                if p:
+                    out.append(p)
+
     # 7. News catalyst: a fresh ★★★ headline whose direction agrees with the intraday tape
     for it in ctx["news_items"]:
         side = {"LONG": 1, "SHORT": -1}.get(it["direction"], 0)

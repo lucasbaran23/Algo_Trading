@@ -42,6 +42,7 @@ Run the tests with `cd backend && python -m pytest -q`.
 | ◆ (`GAS`) | NAT GAS DESK | **MVP market.** Contract strip, expiry and roll; next-session expected range (weekday × expiry × holiday); weather (gas-weighted HDD forecast vs normal); EIA storage; seasonality from year × month down to weekday and expiry cycle; this month's paths in past years; weather vs price |
 | ◆ (`OPT`) | OPTIONS & GAMMA | Open interest and volume by strike, expiries, put/call ratios, ATM IV, 25Δ skew, straddle-implied move, max pain, dealer gamma (GEX) profile, flip, call/put walls, hedge flow per 1% (NG, ES, NQ, CL, GC) |
 | ◆ (`GS`) | GAMMA SCALP LAB | Backtest buying or selling ATM straddles and delta-hedging them with futures: hedge-frequency sweep, IV breakeven, P&L vs realised − implied vol, and day-trading results split by dealer gamma regime (NG, ES, NQ, CL, GC) |
+| ◆ (`LX`) | LEVELS & σ-FADE | Futures playbook around call/put walls, gamma flip and max pain (wall fade, wall break, flip cross, expiry pin) with backtests; fade of ±2–3σ moves vs the same month's history, with confirmation, event study and intraday/swing backtests |
 | ◆ (`TS`) | TRADE SIGNALS | Live trade signals with entry, stop loss, TP1/TP2, strategy, timeframe, confidence and evidence grade; lifecycle tracking, notifications and a track record |
 | ◆ (`IR`) | INTRADAY RESEARCH | Top-down W→D→4H→1H→15m→5m→1m analysis; research-backed day-trade strategies with the optimal timeframe chosen in-sample and validated out-of-sample |
 | ◆ (`DT`) | DAY-TRADE INSIDER | Landing page. Answers "what do I need to know today to day trade this market?": game plan, key levels, volume profile, regime, expected move, catalysts, ranked playbook, risk plan |
@@ -249,6 +250,61 @@ Options levels also feed the Insider's level ladder and game plan.
   Scraping Barchart's website is against its terms.
 * ES/NQ in live mode: CBOE's free delayed SPX/NDX chains, scaled to the futures.
 * Otherwise a labelled simulated chain with the right skew sign: NG winter call skew, index put skew.
+
+## Levels & σ-fade (`LX`)
+
+![Options levels](docs/screenshots/34-options-levels-ng.png)
+
+### Trading futures around key options levels
+Option dealers hedge with futures, and that hedging is what makes the levels matter:
+* **Long gamma** (positive GEX, above the flip): dealers sell rallies and buy dips, so ranges hold.
+  Call wall = resistance, put wall = support.
+* **Short gamma** (below the flip): dealers chase moves, so a wall break can accelerate.
+
+The rules tested, one trade per rule per session, flat by the close:
+
+| Rule | When | Trade |
+|---|---|---|
+| Wall fade | long gamma | Tag the wall, then a 5-min close back inside → fade it. Stop beyond the day's extreme, target 1.5R |
+| Wall break | short gamma | 5-min close through the wall → go with it. Stop back inside, target 2R |
+| Flip cross | any | 5-min close through the gamma flip → trade the new regime. Target 2R |
+| Expiry pin | last 2 sessions to front expiry | From mid-session, trade toward max pain |
+
+* The screen shows today's levels on a ladder and the concrete orders (trigger, entry, stop, target).
+* The same setups appear on Trade Signals as `opt_wall`, with notifications.
+* For a real backtest, save `backend/data/options/{SYMBOL}_levels.csv` (date, call_wall, put_wall,
+  flip, max_pain, gex). Each row is used for the next session.
+* Without that file, levels come from a synthetic chain rebuilt each morning (labelled SIM).
+
+### σ-extreme fade (mean reversion with confirmation)
+![Sigma fade](docs/screenshots/36-sigma-fade-ng.png)
+
+**Measuring the move.** Today's move is measured against the history of the same calendar month in
+earlier years. Alternatives: the same month and weekday, or the last 60 sessions. Only past data is used.
+
+**Intraday scaling.** Intraday, the move since yesterday's close is scaled by how much of a day's
+variance normally happens by that time (overnight gap share plus the elapsed part of the session).
+
+**The trade:**
+* **Arm** at ±2/2.5/3σ.
+* **Confirm:** a 5-min bar closes beyond the previous bar's high (long) or low (short). Swing:
+  a 0.5σ bounce off the extreme within 3 days.
+* **Stop** beyond the day's extreme.
+* **Target** halfway back to yesterday's close.
+
+**What the screen shows:**
+* σ bands for now and for the close.
+* How fat this month's tails are (count of 3σ days vs a normal distribution).
+* An event study of the average path after ±kσ days.
+* In-sample / out-of-sample grids for intraday and swing, with and without confirmation, split
+  into fading drops and fading rallies.
+
+Live: the `sigma_fade` setup on Trade Signals.
+
+**NG in winter.** Fading rallies means shorting into weather risk. The winter policy applies:
+shorts are intraday-only at half size.
+
+API: `GET /api/strategy/optlevels/{symbol}`, `GET /api/strategy/sigma/{symbol}?ref=month&k=2.5`.
 
 ## Gamma scalp lab (`GS`)
 
