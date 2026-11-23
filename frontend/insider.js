@@ -34,6 +34,16 @@ function dtHeader(d) {
   </div>`;
 }
 
+function dtTopdown(d) {
+  const t = d.topdown;
+  if (!t) return "";
+  const arrow = (s) => (s >= 1.5 ? "▲▲" : s >= 0.5 ? "▲" : s <= -1.5 ? "▼▼" : s <= -0.5 ? "▼" : "●");
+  return `<div class="box dt-td"><div class="sec">TOP-DOWN <span class="muted">${esc(t.setup)} · alignment ${signed(t.alignment, 0)} · execute on ${t.exec_tf}</span></div>
+    <div class="dt-tdrow">${t.rows.map((r) => `<span class="dt-tdchip ${r.score >= 0.5 ? "up" : r.score <= -0.5 ? "down" : "muted"}" title="${r.name}: ${r.label}, ${esc(r.structure)}, RSI ${r.rsi}">
+      <b>${r.tf}</b> ${arrow(r.score)} <span class="muted">${r.label}</span></span>`).join("")}
+      <button class="tbtn" data-irgo="1">OPEN INTRADAY RESEARCH ›</button></div></div>`;
+}
+
 function dtPlan(d) {
   let done = {};
   try { done = JSON.parse(localStorage.getItem(`dt.check.${d.prepared_for}.${d.symbol}`) || "{}"); } catch { /* no storage */ }
@@ -189,6 +199,7 @@ function dtRender() {
   if (!v || S.view !== "DT" || !d) return;
   const keep = v.scrollTop;
   v.innerHTML = `<div class="dt">${dtHeader(d)}
+    ${dtTopdown(d)}
     <div class="dt-row dt-r1">${dtPlan(d)}</div>
     <div class="dt-row dt-r3">${dtLadder(d)}${dtProfile(d)}${dtRange(d)}</div>
     <div class="dt-row dt-r2">${dtCatalysts(d)}${dtPlaybook(d)}</div>
@@ -210,8 +221,9 @@ VIEWS.DT = async function (v) {
 };
 
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-dtsym],[data-dtrefresh],[data-dtticket]");
+  const t = ev.target.closest("[data-dtsym],[data-dtrefresh],[data-dtticket],[data-irgo]");
   if (!t || S.view !== "DT") return;
+  if (t.dataset.irgo) { S.view = "IR"; return renderView(); }
   if (t.dataset.dtsym) return select(t.dataset.dtsym, "DT");
   if (t.dataset.dtrefresh) { await dtLoad(S.sel); return dtRender(); }
   if (t.dataset.dtticket && DT.data) {

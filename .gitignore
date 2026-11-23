@@ -131,3 +131,6 @@ dmypy.json
 # Terminal
 .env
 backend/.cache/
+
+# real intraday data files (licensed; do not commit)
+backend/data/intraday/*.csv

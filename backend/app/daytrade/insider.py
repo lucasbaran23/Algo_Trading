@@ -228,6 +228,26 @@ def build(hub, symbol: str) -> dict:
         f"Risk: {risk['reasons'][0]}. Plan {contracts} {sym}" + (f" or {micro['contracts']} {micro_sym}" if micro else "")
         + f" with a {stop_ticks}-tick stop.",
     ]
+    # ------------------------------------------------------------------ top-down + intraday research summary
+    from ..intraday import research as ir, topdown as td
+    try:
+        tdn = td.topdown(md, symbol)
+    except Exception:  # noqa: BLE001 - the briefing must not fail because of the intraday layer
+        tdn = None
+    try:
+        res = ir.research(md, symbol, cost)
+        ok = [x for x in res["strategies"] if x["verdict"] in ("EDGE", "PROMISING") and x["grade"] != "C"]
+        research_line = (f"Intraday research ({res['source']} 1-min data): best validated strategy {ok[0]['name']} on the "
+                         f"{ok[0]['best_tf']}-minute setting ({ok[0]['verdict'].lower()}, OOS t {ok[0]['oos'].get('t_stat', 0):.1f})."
+                         if ok else f"Intraday research ({res['source']} 1-min data): no research strategy passes out-of-sample "
+                         f"validation on this market's data. Lean on levels and discipline, not a system.")
+    except Exception:  # noqa: BLE001
+        res, research_line = None, ""
+    if tdn:
+        plan.insert(1, f"Top-down: {tdn['setup']} (alignment {tdn['alignment']:+.0f}). {tdn['plan']} {tdn['exec_note']}")
+    if research_line:
+        plan.append(research_line)
+
     checklist = [
         "Mark PDH / PDL / settle and the value area on your chart",
         "Know today's report times, and be flat before ★★★ releases",
@@ -258,4 +278,5 @@ def build(hub, symbol: str) -> dict:
         "playbook": {"rows": ranked, "days": bt["days"], "from": bt["first_date"], "to": bt["last_date"],
                      "rt_cost": round(bt["rt_cost"], 2), "regime": reg["kind"]},
         "risk": risk, "plan": plan, "checklist": checklist,
+        "topdown": {k: tdn[k] for k in ("rows", "alignment", "setup", "exec_tf")} if tdn else None,
     }

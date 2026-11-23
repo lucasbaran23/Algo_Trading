@@ -459,6 +459,7 @@ const VIEWS = {
       ["ALRT CL > 70 / ALRT NG SWING < -50", "Create a custom alert (field defaults to LAST)"],
       ["FLAT", "Flatten all paper positions"],
       ["DT / INSIDER, CL DT", "Day-Trade Insider: today's game plan, levels, volume profile, regime, catalysts, ranked playbook, risk plan"],
+      ["IR / RESEARCH, ES IR", "Intraday research: top-down W→D→4H→1H→15m→5m→1m, research-backed strategies, optimal timeframe with out-of-sample validation"],
       ["BT / BACKTEST (F9)", "Backtest lab: run, compare, optimise, walk-forward, Monte Carlo"],
       ["NEWS (F10) / CL NEWS", "News feed with LONG/SHORT signal and ★–★★★ importance per market"],
       ["↑ / ↓", "Move through the monitor"],
@@ -475,7 +476,7 @@ const VIEWS = {
 async function renderView() {
   destroyCharts();
   document.querySelectorAll("#fkeys button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.view));
-  document.body.classList.toggle("wide", S.view === "BT" || S.view === "DT"); // these use the detail column too
+  document.body.classList.toggle("wide", ["BT", "DT", "IR"].includes(S.view)); // these use the detail column too
   const v = $("#view");
   v.innerHTML = "";
   try {
@@ -568,7 +569,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);

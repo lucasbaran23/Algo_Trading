@@ -319,6 +319,20 @@ def insider(symbol: str):
     return _clean(dt.build(hub, _sym(symbol)))
 
 
+# ---------------------------------------------------------------------- intraday research & top-down
+@app.get("/api/intraday/research/{symbol}")
+def intraday_research(symbol: str, slip_ticks: float = 1.0):
+    """Research-backed intraday strategies: timeframe selection with OOS and walk-forward validation."""
+    from .intraday import research as ir
+    return _clean(ir.research(hub.md, _sym(symbol), hub.prop.rules.commission_per_side, slip_ticks))
+
+
+@app.get("/api/intraday/topdown/{symbol}")
+def intraday_topdown(symbol: str):
+    from .intraday import topdown as td
+    return _clean(td.topdown(hub.md, _sym(symbol)))
+
+
 # ---------------------------------------------------------------------- news
 @app.get("/api/news")
 async def news(symbol: str | None = None, min_stars: int = 1, direction: str | None = None, limit: int = 100):

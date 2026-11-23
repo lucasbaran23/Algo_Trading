@@ -39,6 +39,7 @@ Run the tests with `cd backend && python -m pytest -q`.
 
 | Key | Screen | What it shows |
 |---|---|---|
+| ◆ (`IR`) | INTRADAY RESEARCH | Top-down W→D→4H→1H→15m→5m→1m analysis; research-backed day-trade strategies with the optimal timeframe chosen in-sample and validated out-of-sample |
 | ◆ (`DT`) | DAY-TRADE INSIDER | Landing page. Answers "what do I need to know today to day trade this market?": game plan, key levels, volume profile, regime, expected move, catalysts, ranked playbook, risk plan |
 | F1 | MONITOR | Watchlist with swing/day composites, COT index and 5-day up-probability. Daily or 1-min candles with pivots, VWAP and a 20-day forecast cone |
 | F2 | COT | Managed-money vs commercial net positions, COT index with crowded-long/short bands, cross-market table |
@@ -171,6 +172,47 @@ The day-trade setups are tested on daily bars with the standard OHLC path model 
 open→low→high→close, down days open→high→low→close). This is an approximation, so verify a setup on intraday
 data before risking money on it.
 
+## Intraday research (`IR`)
+
+**Top-down analysis.** Each timeframe has a job:
+* **Weekly and daily:** set the bias.
+* **4H and 1H:** show the swing (trend leg or pullback).
+* **15m, 5m and 1m:** time the entry.
+
+Per timeframe the screen shows the EMA20/50 trend and slope, swing structure (HH/HL vs LH/LL), RSI, ATR and its
+percentile, position in the range, the nearest swing high and low, and a sparkline. These roll up into an
+alignment score (−100…+100), a setup label (ALIGNED UP/DOWN, PULLBACK IN UPTREND, RALLY IN DOWNTREND, MIXED…),
+a plan, and the timeframe to execute on.
+
+**Research-backed strategies.** Each one is tested over its own "timeframe" dimension:
+
+| Strategy | Evidence | Timeframe tested | Sources |
+|---|---|---|---|
+| Market intraday momentum (last half-hour) | A | trade window 15/30/60m | [Gao, Han, Li & Zhou, JFE 2018](https://econpapers.repec.org/RePEc:eee:jfinec:v:129:y:2018:i:2:p:394-414); [Baltussen, Da, Lammers & Martens, JFE 2021](https://ideas.repec.org/a/eee/jfinec/v142y2021i1p377-403.html) (60+ futures) |
+| Opening range breakout | B | OR length 5/15/30/60m | [Holmberg, Lönnbark & Lundström, FRL 2013](https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html) (crude oil); [Zarattini, Barbon & Aziz](https://papers.ssrn.com/abstract=4416622); [replication: ≈0 net of costs](https://www.mql5.com/en/blogs/post/776235) |
+| Noise-area intraday momentum | B | decision interval 15/30/60m | [Zarattini, Aziz & Barbon 2024](https://ideas.repec.org/p/chf/rpseri/rp2497.html) |
+| EIA-day half-hour momentum (CL/RB/HO) | B | trade window 15/30m | [Wen, Indriawan, Lien & Xu, Energy Journal 2023](https://econpapers.repec.org/RePEc:aen:journl:ej44-5-xu) |
+| Pre-FOMC drift (ES/NQ/YM) | B | exit time | [Lucca & Moench, JF 2015](https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr512.html); [faded after 2015](https://ideas.repec.org/a/eee/finlet/v40y2021ics1544612320315956.html) |
+| VWAP trend | C | bar size 1/5/15m | [Zarattini & Aziz 2023](https://concretumgroup.com/volume-weighted-average-price-vwap-the-holy-grail-for-day-trading-systems/); [disputed in replications](https://www.quantconnect.com/forum/discussion/16706/bear-bull-traders-039-paper-on-quot-the-holy-grail-quot-not-so-fast/) |
+| RSI(2) reversion (control) | C | bar size 1/5/15m | no peer-reviewed support: shows how often luck looks good |
+
+**Validation.**
+* Each test trades 1 contract and pays commission plus slippage on both sides.
+* Timeframe and parameters are chosen on the first 60% of sessions; the result that counts is on the last 40%.
+* A rolling walk-forward re-optimises on 120 sessions and trades the next 25.
+* EDGE requires an out-of-sample t-stat above a multiple-testing-corrected threshold (≈2.6), at least 30 trades,
+  and walk-forward t ≥ 2.
+* Every strategy reports its gross ticks per trade against the round-turn cost.
+
+The test suite includes a **positive control**: an intraday-momentum effect is planted in the data, and the engine
+must detect it, choose the 30-minute window and rank it first. It does.
+
+**Data.** Drop real 1-minute bars into `backend/data/intraday/{SYMBOL}_1m.csv`, with columns timestamp, open,
+high, low, close, volume (ET or UTC). Sources include Databento, FirstRate Data, Kibot or a platform export.
+Without real data, a synthetic 1-minute simulator runs instead. It is consistent with the daily bars and the
+time-of-day volatility profile, but it contains **no edge by construction**, so it serves as a null benchmark.
+Only real data can show real edges.
+
 ## Backtest lab (F9)
 
 **Strategies.** Each strategy declares its parameters, so the UI builds the input form and the
@@ -213,7 +255,7 @@ The UI picks it up automatically.
 
 REST: `/api/watchlist`, `/api/snapshot/{sym}`, `/api/history/{sym}`, `/api/intraday/{sym}`, `/api/cot[/{sym}]`,
 `/api/supply-demand`, `/api/matrix`, `/api/alerts[/rules]`, `/api/prop[/presets|/rules|/reset|/size|/flatten]`,
-`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`.
+`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`, `/api/intraday/{research|topdown}/{sym}`.
 
 WebSocket: `/ws` streams `tick`, `signals`, `alert`, `fill` and `news` messages. Interactive docs are at `/docs`.
 
@@ -226,6 +268,7 @@ backend/app/
   signals/quant.py, fundamental.py, forecast.py, engine.py
   news/feeds.py, classifier.py, llm.py, service.py  RSS + sim feeds, rule & Claude classifiers, scoring
   daytrade/calendar.py, analytics.py, playbook.py, insider.py  report calendar, regime/profile/ranges, setups, briefing
+  data/intraday.py; intraday/strategies.py, research.py, topdown.py  1-min data (CSV or sim), research strategies, validation, top-down
   alerts.py                     built-in + user rules, dedup/cooldown
   backtest/strategies.py, engine.py  strategy library; simulator, metrics, optimiser, walk-forward, Monte Carlo
   prop/rules.py, brokers.py     prop rule engine, paper/Tradovate/ProjectX adapters
