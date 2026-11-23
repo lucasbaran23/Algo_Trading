@@ -97,6 +97,7 @@ class SignalManager:
                 "cot_state": snap["cot"]["state"], "now_et": now_et,
                 "news_items": [{"title": it["title"], "direction": s["direction"]} for it in recent
                                for s in it["signals"] if s["symbol"] == sym and s["stars"] == 3],
+                "natgas": self._ng_state(hub) if sym == "NG" else None,
             }
             for plan in setups.detect(ctx):
                 key = (sym, plan["setup"], plan["side"] if plan["setup"] == "orb" else 0)
@@ -105,7 +106,9 @@ class SignalManager:
                     continue
                 if now - self._cooldown.get(key, 0) < 1800:
                     continue
-                sig = self._create(hub, sym, plan, snap, news_scores.get(sym), ctx["regime"])
+                sig = self._create(hub, sym, plan, snap, news_scores.get(sym), ctx["regime"], ctx["natgas"])
+                if sig is None:
+                    continue
                 events.append(self._event("created", sig))
                 if sig["status"] == "ACTIVE":           # market entries are live immediately
                     events.append(self._event("activated", sig))
@@ -113,7 +116,17 @@ class SignalManager:
             self.save()
         return events
 
-    def _create(self, hub, sym, plan, snap, news, reg) -> dict:
+    def _ng_state(self, hub) -> dict | None:
+        try:
+            from ..natgas.dynamics import quick_state
+            return quick_state(hub.md, hub.md.settings)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _create(self, hub, sym, plan, snap, news, reg, ng=None) -> dict | None:
+        side0 = plan["side"]
+        if ng and ng["policy"] and side0 < 0 and plan["horizon"].startswith("Swing"):
+            return None                                  # winter policy: no swing shorts in natural gas
         c = universe.get(sym)
         now = time.time()
         side = plan["side"]
@@ -132,12 +145,26 @@ class SignalManager:
         if news and news.get("count") and news["score"] * side > 20:
             conf += 1
             why.append("news flow agrees")
-        conf = min(3, conf)
+        policy_note = None
+        if ng and ng["policy"]:
+            if side < 0:
+                conf -= 1
+                why.append("winter policy: short downgraded")
+                policy_note = "Winter policy: shorts are intraday-only at HALF size (upside spikes are bigger than drops)"
+            elif ng["bias"] == "BULLISH" or (ng["rev_hdd"] or 0) >= 10:
+                conf += 1
+                why.append("colder forecast")
+        conf = max(1, min(3, conf))
         size = hub.prop.risk_size(sym, stop_ticks, 20, hub.prices())
         micro = None
         if sym in MICRO:
             micro = hub.prop.risk_size(MICRO[sym], stop_ticks, 20, hub.prices())
             micro["symbol"] = MICRO[sym]
+        if policy_note:
+            size["contracts"] = size["contracts"] // 2
+            if micro:
+                micro["contracts"] = micro["contracts"] // 2
+            plan = {**plan, "reasons": plan["reasons"] + [policy_note]}
         rr1 = abs(plan["tp1"] - plan["entry"]) / risk_pts
         rr2 = abs(plan["tp2"] - plan["entry"]) / risk_pts
         status = "ACTIVE" if plan["entry_type"] == "market" else "PENDING"

@@ -110,6 +110,19 @@ def build(hub, symbol: str) -> dict:
     if prof:
         raw_levels += [(prof["poc"], "Volume POC (20d)", "profile"), (prof["vah"], "Value-area high", "profile"),
                        (prof["val"], "Value-area low", "profile")]
+    opt = None
+    try:
+        from ..options import analytics as oa, chains as och
+        if sym in och.SUPPORTED:
+            ch, meta = och.load(md, sym)
+            opt = oa.analyse(ch, meta)
+            for k, name in (("call_wall", "Options call wall"), ("put_wall", "Options put wall"), ("flip", "Gamma flip")):
+                if opt.get(k):
+                    raw_levels.append((opt[k], name, "options"))
+            if opt["front"].get("max_pain"):
+                raw_levels.append((opt["front"]["max_pain"], "Max pain (front expiry)", "options"))
+    except Exception:  # noqa: BLE001
+        opt = None
     seen, levels = set(), []
     for p, name, kind in raw_levels:
         p = rnd(p)
@@ -256,6 +269,22 @@ def build(hub, symbol: str) -> dict:
             natgas = None
     if research_line:
         plan.append(research_line)
+    if opt:
+        plan.insert(2 if sym == "NG" else 1,
+                    f"Options ({opt['source']}): dealers modelled {opt['regime'].lower()} gamma ({opt['mode'].replace('_', ' ')}); "
+                    + (f"flip {opt['flip']}, " if opt["flip"] else "") + f"call wall {opt['call_wall']}, put wall {opt['put_wall']}. "
+                    + ("Expect pinning and mean reversion." if opt["regime"] == "POSITIVE" else "Moves can accelerate: respect breakouts.")
+                    + (f" Front straddle ±{opt['front']['expected_move']} by {opt['front']['expiry']}." if opt.get("front") else ""))
+    if sym == "NG":
+        try:
+            from ..natgas.dynamics import quick_state
+            qs = quick_state(md, hub.md.settings)
+            if qs["policy"]:
+                plan.insert(1, "WINTER LONG BIAS: prefer longs. Shorts intraday only, at half size, with a warm-forecast or "
+                               "storage confirmation. Upside spikes are bigger than drops (call skew)."
+                            + (f" Forecast revision since the last run: {qs['rev_hdd']:+.0f} HDD." if qs["rev_hdd"] is not None else ""))
+        except Exception:  # noqa: BLE001
+            pass
 
     checklist = [
         "Mark PDH / PDL / settle and the value area on your chart",

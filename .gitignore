@@ -134,3 +134,6 @@ backend/.cache/
 
 # real intraday data files (licensed; do not commit)
 backend/data/intraday/*.csv
+
+# real option chains (licensed; do not commit)
+backend/data/options/*.csv

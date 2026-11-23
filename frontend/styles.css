@@ -376,6 +376,12 @@ label.opt { display: flex; gap: 4px; align-items: center; color: var(--ink-2); c
 .heat td .muted { color: var(--ink-2); opacity: .85; }
 .tbl tr.ng-sum td { font-weight: 700; border-top: 1px solid var(--line); background: var(--surface-2); }
 
+/* ---------- winter dynamics & options ---------- */
+.ng-policy.on { border-color: rgb(var(--up-rgb) / .5); background: linear-gradient(90deg, rgb(var(--up-rgb) / .08), transparent 60%); }
+.ng-policy.on .sec { color: var(--up); }
+.tbl tr.ng-win td:first-child { color: var(--accent); }
+.opt-svg { width: 100%; display: block; margin: 4px 0; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {
   body { overflow: auto; }

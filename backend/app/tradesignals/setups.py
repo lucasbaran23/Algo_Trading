@@ -156,6 +156,19 @@ def detect(ctx: dict) -> list[dict]:
             if p:
                 out.append(p)
 
+    # 7b. Natural gas: colder forecast revision in winter (weather-driven long)
+    ng = ctx.get("natgas")
+    if ctx["symbol"] == "NG" and ng and ng["policy"] and (ng["rev_hdd"] or 0) >= 10 and day >= -10:
+        vw = lv["vwap"]
+        entry_type, e = ("limit", vw) if last > vw + 0.05 * adr else ("market", last)
+        p = _plan(ctx, "ng_weather", "Cold forecast revision (winter long)", "Weather", "15m", "Intraday", "B", 1, entry_type,
+                  e, e - 0.3 * adr, expires_in=3 * 3600,
+                  reasons=[f"+{ng['rev_hdd']:.0f} HDD added to the 14-day forecast since the previous run: more heating demand",
+                           f"Next 14 days {ng['next14_pct']:+.0f}% vs normal; winter call skew means colder revisions move price harder than warmer ones",
+                           "Winter policy: longs preferred ('long and wrong beats short and dead')"])
+        if p:
+            out.append(p)
+
     # 7. News catalyst: a fresh ★★★ headline whose direction agrees with the intraday tape
     for it in ctx["news_items"]:
         side = {"LONG": 1, "SHORT": -1}.get(it["direction"], 0)

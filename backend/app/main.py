@@ -370,6 +370,25 @@ def natgas_weather():
     return _clean({k: v for k, v in wx.weather(hub.md, settings).items() if not k.startswith("_")})
 
 
+@app.get("/api/natgas/dynamics")
+def natgas_dynamics():
+    from .natgas import dynamics as ngd
+    return _clean(ngd.dynamics(hub.md, settings))
+
+
+@app.get("/api/options/{symbol}")
+def options(symbol: str, mode: str | None = None):
+    """Options positioning, skew and dealer gamma (GEX) for NG, ES, NQ, CL, GC."""
+    from .options import analytics as oa, chains
+    sym = universe.get(_sym(symbol)).data_symbol
+    if sym not in chains.SUPPORTED:
+        raise HTTPException(404, f"No options analytics for {sym}. Supported: {', '.join(chains.SUPPORTED)}")
+    if mode not in (None, "standard", "short_calls"):
+        raise HTTPException(400, "mode must be standard or short_calls")
+    chain, meta = chains.load(hub.md, sym)
+    return _clean(oa.analyse(chain, meta, mode))
+
+
 @app.get("/api/natgas/contracts")
 def natgas_contracts():
     from .natgas import contracts as ngc

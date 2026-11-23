@@ -63,6 +63,11 @@ def daily_history(c: Contract, seed: int, today: date | None = None) -> pd.DataF
         tdte = np.array([x["tdte"] for x in label_days(dates)])
         exp_f = np.where(tdte <= 2, 1.3, np.where(tdte <= 5, 1.12, 1.0))
         f = month_f[dates.month - 1] * wd_f[np.minimum(dates.weekday, 4)] * exp_f
+        # Winter upside skew (cold snaps spike prices): a mean-zero skewed transform of the shocks,
+        # so the distribution's shape changes but no directional drift is added.
+        winter = np.isin(dates.month, [11, 12, 1, 2, 3])
+        zs = z + 0.11 * (z * z - 1)
+        z = np.where(winter, (zs - zs[winter].mean()) / zs[winter].std() * z[winter].std(), z)
         z = z * f / np.sqrt(np.mean(f ** 2))
         z_on = z_on * f / np.sqrt(np.mean(f ** 2))
     for i in range(n):

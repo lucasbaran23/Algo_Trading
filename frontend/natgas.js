@@ -151,10 +151,50 @@ function ngWeatherLink() {
     <div class="muted" style="margin-top:4px">Correlation HDD anomaly ↔ move: <b>${l.corr ?? "—"}</b>. Past years use observed weather (what happened), not the forecast traders saw at the time.</div></div>`;
 }
 
+function ngDynamics() {
+  const d = NGD.dyn;
+  if (!d) return "";
+  const sv = d.sensitivity, ws = d.winter_summary, os_ = d.other_summary, r = d.revision, im = d.implied_move;
+  const b = (x) => (x && x.pct_per_10hdd != null ? `${signed(x.pct_per_10hdd, 2)}% <span class="muted">(t ${fx(x.t, 1)}, n ${x.n})</span>` : "—");
+  const mxu = Math.max(...d.tails.map((t) => Math.max(t.up95_pct, Math.abs(t.down05_pct))));
+  return `<div class="box ng-policy ${d.policy.active ? "on" : ""}"><div class="sec">${d.policy.label} <span class="muted">"rather long and wrong than short and dead"</span></div>
+      <ul class="dt-list">${d.policy.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>
+    <div class="dt-row dt-r2b">
+      <div class="box"><div class="sec">WEATHER → PRICE SENSITIVITY <span class="muted">${esc(sv.method)}</span></div>
+        <div class="kv"><span>Winter (Nov–Mar), per +10 HDD</span><span>${b(sv.winter)}</span>
+          <span>Rest of the year</span><span>${b(sv.other)}</span>
+          <span>Winter, colder revisions</span><span>${b(sv.winter_colder)}</span>
+          <span>Winter, warmer revisions</span><span>${b(sv.winter_warmer)}</span></div>
+        ${sv.winter_colder?.pct_per_10hdd != null && sv.winter_warmer?.pct_per_10hdd != null ? `<div class="dt-tip">Asymmetry: colder revisions move price ${fx(sv.winter_colder.pct_per_10hdd / (sv.winter_warmer.pct_per_10hdd || 1), 1)}× as much as warmer ones: the "call skew" in action.</div>` : ""}
+        <div class="sec">TODAY'S FORECAST REVISION</div>
+        ${r.available ? `<div class="kv"><span>HDD change vs previous run</span><span class="${cls(r.hdd_change)}">${signed(r.hdd_change, 1)} HDD (${r.days_compared} days compared · ${esc(r.source)})</span>
+          <span>Implied move (winter sensitivity)</span><span class="${cls(im?.pct)}">${im ? `${signed(im.pct, 2)}% ≈ ${money(im.usd_ng)}/NG · ${money(im.usd_mng)}/MNG` : "—"}</span></div>` : `<div class="muted">${esc(r.note)}</div>`}
+        <div class="muted" style="margin-top:4px">The desk saves a forecast snapshot every day; after ~60 days it measures sensitivity from real forecast revisions instead of the proxy.</div></div>
+      <div class="box"><div class="sec">UPSIDE vs DOWNSIDE TAILS BY MONTH <span class="muted">95th-pct up day vs 5th-pct down day</span></div>
+        <table class="tbl"><thead><tr><th>MONTH</th><th>BIG UP DAY</th><th>BIG DOWN DAY</th><th>RATIO</th><th>SKEW</th><th>SHORT 5D RISK</th><th>LONG 5D RISK</th></tr></thead><tbody>
+        ${d.tails.map((t) => `<tr class="${[11, 12, 1, 2, 3].includes(t.month) ? "ng-win" : ""}"><td class="sym">${MON[t.month - 1]}</td><td class="up" style="${ngHeat(t.up95_pct, mxu)}">+${fx(t.up95_pct, 1)}%</td>
+          <td class="down" style="${ngHeat(t.down05_pct, mxu)}">${fx(t.down05_pct, 1)}%</td><td>${fx(t.tail_ratio, 2)}</td><td>${signed(t.skew, 2)}</td>
+          <td class="${t.short_5d_p90_pct > t.long_5d_p90_pct ? "down" : ""}">+${fx(t.short_5d_p90_pct, 1)}%</td><td>${fx(t.long_5d_p90_pct, 1)}%</td></tr>`).join("")}</tbody></table>
+        <div class="muted">"5D risk" = 90th-percentile adverse move against a position held 5 sessions. Winter avg: short ${fx(ws.short_5d_p90_pct, 1)}% vs long ${fx(ws.long_5d_p90_pct, 1)}% (rest of year ${fx(os_.short_5d_p90_pct, 1)}% vs ${fx(os_.long_5d_p90_pct, 1)}%).</div></div>
+    </div>`;
+}
+
+function ngOptions() {
+  const o = NGD.opt;
+  if (!o) return "";
+  const f = o.front || {};
+  return `<div class="box"><div class="sec">NG OPTIONS POSITIONING <span class="muted">${esc(o.source)} · dealers ${o.mode.replace("_", " ")}</span></div>
+    <div class="kv"><span>Dealer gamma / 1%</span><span class="${o.total_gex >= 0 ? "up" : "down"}">${o.regime} (${o.total_gex >= 0 ? "damped" : "accelerating"})</span>
+      <span>Call wall / put wall</span><span>${px("NG", o.call_wall)} / ${px("NG", o.put_wall)}</span>
+      <span>Front expiry ${f.expiry}</span><span>±${px("NG", f.expected_move)} straddle · max pain ${px("NG", f.max_pain)}</span>
+      <span>25Δ risk reversal</span><span class="${f.rr25 > 0.5 ? "up" : ""}">${f.rr25 == null ? "—" : signed(f.rr25, 1) + " vol"} ${f.rr25 > 0.5 ? "(call skew)" : ""}</span></div>
+    <div class="row-actions"><button class="tbtn" data-ngjump="OPT">FULL OPTIONS &amp; GAMMA ›</button></div></div>`;
+}
+
 // ------------------------------------------------------------------ view
 async function ngLoad() {
-  [NGD.o, NGD.s, NGD.w, NGD.k, NGD.ins] = await Promise.all([api("/api/natgas/outlook"), api("/api/natgas/seasonality"),
-    api("/api/natgas/weather"), api("/api/natgas/contracts"), api("/api/snapshot/NG")]);
+  [NGD.o, NGD.s, NGD.w, NGD.k, NGD.ins, NGD.dyn, NGD.opt] = await Promise.all([api("/api/natgas/outlook"), api("/api/natgas/seasonality"),
+    api("/api/natgas/weather"), api("/api/natgas/contracts"), api("/api/snapshot/NG"), api("/api/natgas/dynamics"), api("/api/options/NG")]);
 }
 function ngRender() {
   const v = $("#view");
@@ -165,8 +205,9 @@ function ngRender() {
       <div class="headline"><span class="big">${px("NG", q.last)}</span><span class="${cls(q.chg_pct)}">${signed(q.chg_pct, 2)}%</span></div></div>
       <div class="dt-badges">${Object.entries(NGD.ins.sources || {}).map(([k, x]) => srcBadge(k.slice(0, 3).toUpperCase(), x)).join(" ")} ${srcBadge("WX", NGD.w.source.startsWith("LIVE") ? "LIVE" : "SIM")}
         <span class="bias ${biasCls(NGD.ins.swing.bias)}">SWING ${NGD.ins.swing.bias}</span><span class="bias ${biasCls(NGD.ins.day.bias)}">DAY ${NGD.ins.day.bias}</span>
-        <button class="tbtn" data-ngjump="DT">INSIDER ›</button><button class="tbtn" data-ngjump="TS">SIGNALS ›</button><button class="tbtn" data-ngjump="IR">RESEARCH ›</button></div></div>
-    <div class="dt-row ng-r1">${ngOutlook()}<div class="ng-col">${ngContracts()}${ngStorage()}</div></div>
+        <button class="tbtn" data-ngjump="DT">INSIDER ›</button><button class="tbtn" data-ngjump="OPT">OPTIONS ›</button><button class="tbtn" data-ngjump="TS">SIGNALS ›</button><button class="tbtn" data-ngjump="IR">RESEARCH ›</button></div></div>
+    <div class="dt-row ng-r1">${ngOutlook()}<div class="ng-col">${ngContracts()}${ngOptions()}${ngStorage()}</div></div>
+    ${ngDynamics()}
     <div class="dt-row dt-r2b">${ngWeather()}${ngExpiry()}</div>
     ${ngSeasonHeat()}
     <div class="dt-row dt-r2b">${ngAnalogs()}${ngWeatherLink()}</div>
@@ -190,6 +231,7 @@ document.addEventListener("click", async (ev) => {
   if (!t || S.view !== "NGD") return;
   if (t.dataset.ngrefresh) { await ngLoad(); return ngRender(); }
   if (t.dataset.ngjump === "TS" && typeof TS !== "undefined") TS.filter.symbol = "NG";
+  if (t.dataset.ngjump === "OPT" && typeof OPT !== "undefined") { OPT.sym = "NG"; OPT.mode = null; }
   S.view = t.dataset.ngjump;
   renderView();
 });

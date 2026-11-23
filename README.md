@@ -40,6 +40,7 @@ Run the tests with `cd backend && python -m pytest -q`.
 | Key | Screen | What it shows |
 |---|---|---|
 | ◆ (`GAS`) | NAT GAS DESK | **MVP market.** Contract strip, expiry and roll; next-session expected range (weekday × expiry × holiday); weather (gas-weighted HDD forecast vs normal); EIA storage; seasonality from year × month down to weekday and expiry cycle; this month's paths in past years; weather vs price |
+| ◆ (`OPT`) | OPTIONS & GAMMA | Open interest and volume by strike, expiries, put/call ratios, ATM IV, 25Δ skew, straddle-implied move, max pain, dealer gamma (GEX) profile, flip, call/put walls, hedge flow per 1% (NG, ES, NQ, CL, GC) |
 | ◆ (`TS`) | TRADE SIGNALS | Live trade signals with entry, stop loss, TP1/TP2, strategy, timeframe, confidence and evidence grade; lifecycle tracking, notifications and a track record |
 | ◆ (`IR`) | INTRADAY RESEARCH | Top-down W→D→4H→1H→15m→5m→1m analysis; research-backed day-trade strategies with the optimal timeframe chosen in-sample and validated out-of-sample |
 | ◆ (`DT`) | DAY-TRADE INSIDER | Landing page. Answers "what do I need to know today to day trade this market?": game plan, key levels, volume profile, regime, expected move, catalysts, ranked playbook, risk plan |
@@ -212,6 +213,42 @@ directional edge. Its weather-to-price link is illustrative and labelled SIM. Wi
 analysis runs on about 10 years of the continuous NG=F series. For contract-by-contract studies (for example,
 December contracts only), load per-contract history from a vendor.
 
+### Winter dynamics (on the Nat Gas Desk)
+
+* **Weather → price sensitivity:** % move per +10 HDD in the 14-day forecast, for winter vs the rest of the year,
+  and for colder vs warmer revisions (the asymmetry). The desk saves a forecast snapshot every day; after about
+  60 days it switches from the proxy (realised weather) to real forecast revisions.
+* **Today's revision:** HDD added or removed since the previous run, and the implied move in % and $ per NG/MNG.
+* **Tails by month:** the 95th-percentile up day vs the 5th-percentile down day, skew, and the 90th-percentile
+  adverse move against a 5-day short vs a 5-day long.
+* **Winter long-bias policy** (Nov–Mar; `NG_WINTER_POLICY=off` to disable):
+  * NG swing shorts are blocked.
+  * Intraday shorts lose a confidence star and get half size.
+  * Longs gain a star on colder forecasts.
+  * A **Cold forecast revision (winter long)** signal fires when 10 or more HDD are added.
+  * The Insider leads with the policy.
+
+## Options & gamma (`OPT`)
+
+Black-76 greeks per option are aggregated into:
+* dealer gamma exposure in $ per 1% move, and its profile across prices;
+* the gamma flip, call and put walls, and max pain per expiry;
+* put/call ratios (OI and volume), ATM IV, 25-delta risk reversal (the skew) and the straddle-implied move;
+* the estimated futures hedging flow per 1% move.
+
+Who is short the options is an **assumption**, and the screen lets you switch it:
+* **standard:** dealers long calls / short puts, the equity convention;
+* **short_calls:** customers buy calls, the default for NG in winter.
+
+Options levels also feed the Insider's level ladder and game plan.
+
+**Data:**
+* `backend/data/options/{SYMBOL}_chain.csv` with columns expiry, strike, type, open_interest, volume, iv
+  (underlying optional). Export it from CME QuikStrike, Databento, a broker, or a licensed Barchart API.
+  Scraping Barchart's website is against its terms.
+* ES/NQ in live mode: CBOE's free delayed SPX/NDX chains, scaled to the futures.
+* Otherwise a labelled simulated chain with the right skew sign: NG winter call skew, index put skew.
+
 ## Trade signals (`TS`)
 
 Every 15 seconds the engine scans all markets and turns the analytics into concrete trade plans:
@@ -331,7 +368,7 @@ The UI picks it up automatically.
 
 REST: `/api/watchlist`, `/api/snapshot/{sym}`, `/api/history/{sym}`, `/api/intraday/{sym}`, `/api/cot[/{sym}]`,
 `/api/supply-demand`, `/api/matrix`, `/api/alerts[/rules]`, `/api/prop[/presets|/rules|/reset|/size|/flatten]`,
-`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`, `/api/intraday/{research|topdown}/{sym}`, `/api/tsignals[/stats|/{id}/dismiss|/{id}/paper|/test-notify]`, `/api/natgas/{outlook|seasonality|weather|contracts}`.
+`/api/orders`, `/api/backtest/{strategies|run|optimize|walkforward|montecarlo}`, `/api/news[/scores|/status]`, `/api/insider/{sym}`, `/api/intraday/{research|topdown}/{sym}`, `/api/tsignals[/stats|/{id}/dismiss|/{id}/paper|/test-notify]`, `/api/natgas/{outlook|seasonality|weather|contracts|dynamics}`, `/api/options/{sym}?mode=`.
 
 WebSocket: `/ws` streams `tick`, `signals`, `alert`, `fill`, `news` and `tsignal` messages. Interactive docs are at `/docs`.
 
@@ -346,7 +383,8 @@ backend/app/
   daytrade/calendar.py, analytics.py, playbook.py, insider.py  report calendar, regime/profile/ranges, setups, briefing
   data/intraday.py; intraday/strategies.py, research.py, topdown.py  1-min data (CSV or sim), research strategies, validation, top-down
   tradesignals/setups.py, manager.py, notify.py  trade-signal detectors, lifecycle + track record, Discord/Telegram/webhook
-  natgas/contracts.py, seasonality.py, weather.py  NG contract calendar, seasonality + next-session outlook, HDD weather
+  natgas/contracts.py, seasonality.py, weather.py, dynamics.py  NG calendar, seasonality + outlook, HDD weather, winter dynamics/policy
+  options/chains.py, analytics.py  option chains (CSV / CBOE / sim), Black-76 greeks, GEX, skew, walls, max pain
   alerts.py                     built-in + user rules, dedup/cooldown
   backtest/strategies.py, engine.py  strategy library; simulator, metrics, optimiser, walk-forward, Monte Carlo
   prop/rules.py, brokers.py     prop rule engine, paper/Tradovate/ProjectX adapters
