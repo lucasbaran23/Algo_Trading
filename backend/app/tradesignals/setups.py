@@ -190,6 +190,19 @@ def detect(ctx: dict) -> list[dict]:
             if p:
                 out.append(p)
 
+    # 10. High-volatility push into a key level + RSI divergence on 5-minute bars, confirmed
+    vd = ctx.get("voldiv")
+    if vd:
+        side, u = vd["side"], vd["sd_px"]
+        p = _plan(ctx, "vol_div", f"Vol push + {vd['level']} + RSI divergence", "Reversal", "5m", "Intraday", "C", side, "market",
+                  last, vd["ext"] - side * 0.1 * u, r_mult=(1.0, 2.0), expires_in=90 * 60,
+                  reasons=[f"Fast {'drop' if side > 0 else 'rally'} into the {vd['level']} ({ctx['rnd'](vd['level_px'])}): {abs(vd['z']):.1f}σ leg",
+                           f"RSI {'bullish' if side > 0 else 'bearish'} divergence: new {'low' if side > 0 else 'high'} with RSI {vd['rsi_now']:.0f} vs {vd['rsi_prior']:.0f} at the earlier swing",
+                           f"Confirmed: a 5-minute close {'above' if side > 0 else 'below'} the divergence bar",
+                           "Stop beyond the extreme; take half at 1R, the rest at 2R or VWAP"])
+        if p:
+            out.append(p)
+
     # 9. Options levels: wall fade (dealers long gamma), wall break / flip cross (short gamma)
     ol = ctx.get("optlv")
     if ol and ol.get("sd_day"):

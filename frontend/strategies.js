@@ -1,7 +1,7 @@
 /* Levels & σ-fade: trading futures around key options levels, and fading statistically extreme moves. */
 "use strict";
 
-const LX = { sym: "NG", part: "opt", ref: "month", k: 2.5, opt: null, sig: null, busy: false };
+const LX = { sym: "NG", part: "opt", ref: "month", k: 2.5, data: { opt: null, sig: null, vd: null }, busy: false, ex: "example" };
 
 function lxLadder(p) {
   const lv = [["CALL WALL", p.call_wall, "var(--s2)"], ["GAMMA FLIP", p.flip, "var(--ink)"], ["MAX PAIN", p.max_pain, "var(--s4)"],
@@ -135,34 +135,127 @@ function lxRenderOpt(d) {
       <li>Price bars: ${esc(bt.source)}.</li></ul></div>`;
 }
 
+function vdChart(t) {
+  const ch = t.chart;
+  if (!ch || !ch.c.length) return '<div class="muted">No bars yet.</div>';
+  const n = ch.c.length, W = 1000, H1 = 250, H2 = 110, gap = 14, padL = 8, padR = 150;
+  const lvls = t.levels.filter((l) => l.price != null);
+  const lo0 = Math.min(...ch.l), hi0 = Math.max(...ch.h), span0 = hi0 - lo0 || 1;
+  const show = lvls.filter((l) => l.price >= lo0 - 0.35 * span0 && l.price <= hi0 + 0.35 * span0);
+  const lo = Math.min(lo0, ...show.map((l) => l.price)), hi = Math.max(hi0, ...show.map((l) => l.price)), pad = (hi - lo) * 0.05;
+  const bw = (W - padL - padR) / n, x = (i) => padL + (i + 0.5) * bw;
+  const y = (v) => 8 + (1 - (v - (lo - pad)) / (hi - lo + 2 * pad)) * (H1 - 16);
+  const yr = (v) => H1 + gap + (1 - v / 100) * H2;
+  const candles = ch.c.map((c, i) => {
+    const up = c >= ch.o[i], col = up ? "var(--up)" : "var(--down)";
+    return `<line x1="${x(i)}" x2="${x(i)}" y1="${y(ch.h[i])}" y2="${y(ch.l[i])}" style="stroke:${col}"/><rect x="${x(i) - bw * 0.35}" width="${bw * 0.7}" y="${y(Math.max(c, ch.o[i]))}" height="${Math.max(1, Math.abs(y(c) - y(ch.o[i])))}" style="fill:${col}"/>`;
+  }).join("");
+  let lastY = -99;
+  const lv = show.sort((a, b) => b.price - a.price).map((l) => {
+    const ly = Math.max(y(l.price), lastY + 12); lastY = ly;
+    return `<line x1="${padL}" x2="${W - padR}" y1="${y(l.price)}" y2="${y(l.price)}" style="stroke:var(--s3)" stroke-dasharray="4 4" opacity=".8"/>
+      <text x="${W - padR + 6}" y="${ly + 4}" font-size="11" style="fill:var(--ink-2)">${esc(l.name)} ${px(t.symbol, l.price)}</text>`;
+  }).join("");
+  const rp = ch.rsi.map((v, i) => (v == null ? null : `${x(i)},${yr(v)}`)).filter(Boolean).join(" ");
+  const divs = t.divergences.map((d, k) => {
+    const nxt = t.divergences[k + 1];
+    const labelIt = !nxt || nxt.bar > d.bar + 4 || nxt.side !== d.side;
+    const a = d.prior - ch.offset, b = d.bar - ch.offset;
+    if (a < 0 || b >= n) return "";
+    const bull = d.side === "LONG", col = d.grade.startsWith("A+") ? "var(--warn)" : "var(--s4)";
+    const pa = bull ? ch.l[a] : ch.h[a], pb = bull ? ch.l[b] : ch.h[b];
+    return `<line x1="${x(a)}" x2="${x(b)}" y1="${y(pa)}" y2="${y(pb)}" style="stroke:${col}" stroke-width="2"/>
+      <line x1="${x(a)}" x2="${x(b)}" y1="${yr(ch.rsi[a])}" y2="${yr(ch.rsi[b])}" style="stroke:${col}" stroke-width="2"/>
+      ${labelIt ? `<text x="${x(b)}" y="${bull ? y(pb) + 16 : y(pb) - 8}" font-size="11" text-anchor="middle" style="fill:${col}">${bull ? "▲" : "▼"} ${d.grade.split(" ")[0]}</text>` : ""}`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H1 + gap + H2 + 6}" class="opt-svg" role="img" aria-label="5-minute candles with key levels, RSI below, divergences marked">
+    ${lv}${candles}${divs}
+    <rect x="${padL}" y="${yr(70)}" width="${W - padL - padR}" height="${yr(30) - yr(70)}" style="fill:var(--s1);opacity:.06"/>
+    <line x1="${padL}" x2="${W - padR}" y1="${yr(70)}" y2="${yr(70)}" style="stroke:var(--line)"/><line x1="${padL}" x2="${W - padR}" y1="${yr(30)}" y2="${yr(30)}" style="stroke:var(--line)"/>
+    <polyline fill="none" stroke-width="1.6" style="stroke:var(--s1)" points="${rp}"/>
+    <text x="${W - padR + 6}" y="${yr(70) + 4}" font-size="10" style="fill:var(--muted)">RSI 70</text><text x="${W - padR + 6}" y="${yr(30) + 4}" font-size="10" style="fill:var(--muted)">RSI 30</text>
+    <text x="${W - padR + 6}" y="${yr(50) + 4}" font-size="10" style="fill:var(--s1)">RSI(14) ${fx(ch.rsi[n - 1], 0)}</text>
+  </svg>`;
+}
+
+function lxRenderVd(d) {
+  const bt = d.backtest, t = LX.ex === "example" && d.example ? d.example : d.today;
+  const sim = bt.source === "SIM";
+  const lab = (g) => `${g.tf}m · ${g.vol === "off" ? "no vol filter" : g.vol === "leg" ? `push ≥ ${g.k}σ` : `day ≥ ${g.k}σ`} · ${g.level ? "level" : "no level"} · ${g.div ? "divergence" : "no divergence"}`;
+  const ch = bt.chosen;
+  const top = [...bt.grid].sort((a, b) => (b.is.t_stat ?? -99) - (a.is.t_stat ?? -99)).slice(0, 8);
+  return `
+    <div class="tiles">
+      ${tile("Move since prior close", signed(100 * (d.today.last / d.today.prev_close - 1), 2) + "%", cls(d.today.last - d.today.prev_close))}${tile("Z-score now", signed(d.today.z_now, 2) + "σ")}
+      ${tile("5-min RSI(14)", fx(d.today.rsi_now, 0), d.today.rsi_now < 30 ? "up" : d.today.rsi_now > 70 ? "down" : "")}${tile("1 daily σ", px(d.today.symbol, d.today.sd_px))}
+      ${tile("A+ setups today", d.today.full_setups)}${tile("A+ setups in backtest", bt.ablation[0].all.n ?? 0)}
+    </div>
+    <div class="box"><div class="sec">CHART <span class="muted">${esc(t.label)} · 5-minute bars · key levels dashed · divergences drawn on price and RSI</span></div>
+      <div class="dt-switch" style="margin-bottom:6px">${d.example ? `<button class="tbtn ${LX.ex === "example" ? "on" : ""}" data-lxex="example">LATEST A+ EXAMPLE</button>` : ""}<button class="tbtn ${LX.ex !== "example" || !d.example ? "on" : ""}" data-lxex="today">TODAY</button></div>
+      ${vdChart(t)}
+      <table class="tbl"><thead><tr><th>DIVERGENCE</th><th>GRADE</th><th>PUSH (σ)</th><th>KEY LEVEL</th><th>TRIGGER</th><th>STOP</th><th>CONFIRMED</th></tr></thead><tbody>
+      ${t.divergences.map((x) => `<tr><td class="${x.side === "LONG" ? "up" : "down"}">${x.side === "LONG" ? "Bullish" : "Bearish"} · bar ${x.bar}</td><td class="${x.grade.startsWith("A+") ? "up" : ""}">${esc(x.grade)}</td>
+        <td class="${x.vol_ok ? "up" : ""}">${signed(x.z, 2)}</td><td>${x.level ? `${esc(x.level)} ${px(t.symbol, x.level_px)}` : '<span class="muted">none nearby</span>'}</td>
+        <td>${px(t.symbol, x.trigger)}</td><td>${px(t.symbol, x.stop)}</td><td>${x.confirmed ? "yes" : "no"}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">No RSI divergence in this session.</td></tr>'}
+      </tbody></table></div>
+    <div class="dt-row dt-r2b">
+      <div class="box"><div class="sec">THE STRATEGY</div><ul class="dt-list">
+        <li><b>1 · Volatility:</b> a fast push against you: the quickest 30-minute leg in the last 2½ hours moved at least 1.5σ for that length of time (σ from the same month in earlier years).</li>
+        <li><b>2 · Key level:</b> the new low (high) is within 0.25 daily σ of a level the market watches: prior-day high/low/close, prior-week high/low, and for options markets the put wall, call wall, gamma flip and max pain.</li>
+        <li><b>3 · RSI divergence (5-min, RSI 14):</b> price makes a lower low than an earlier swing low while RSI makes a higher low, and RSI was below 40 at the first low (mirror for shorts).</li>
+        <li><b>Trigger:</b> within 3 bars, a 5-minute close above the divergence bar's high. Enter on that close.</li>
+        <li><b>Risk:</b> stop 0.1σ beyond the extreme. Target 2R, or VWAP if it is nearer but at least 1R away. Flat by the close. Live signals take half at 1R.</li>
+        <li><b>Why it can work:</b> the push shows urgency, the level is where resting orders and option hedges sit, and the divergence says the urgency is fading. <b>Why it fails:</b> on news-driven trend days, divergences repeat lower and lower; the stop is what saves you.</li></ul></div>
+      <div class="box"><div class="sec">WHAT EACH FILTER ADDS <span class="muted">5-min bars, push ≥ 1.5σ, per 1 contract after ${usd(bt.rt_cost)} costs</span></div>
+        <table class="tbl"><thead><tr><th>VERSION</th><th>ALL (n · avg · t)</th><th>WIN %</th><th>IN-SAMPLE</th><th>OUT-OF-SAMPLE</th></tr></thead><tbody>
+        ${bt.ablation.map((a, i) => `<tr class="${i === 0 ? "hl" : ""}"><td class="sym">${esc(a.label)}</td><td>${st4(a.all)}</td><td>${fx(a.all.win_pct, 0)}</td><td>${st4(a.is)}</td><td>${st4(a.oos)}</td></tr>`).join("")}
+        </tbody></table>
+        <div class="muted">If a filter helps, removing it should make the average worse. Fewer trades means wider error bars: with under 30 trades, a t-stat below 2 is not evidence.</div></div>
+    </div>
+    <div class="box"><div class="sec">BEST CONFIGURATIONS IN-SAMPLE <span class="muted">${bt.grid.length} tested · ${bt.sessions} sessions · split at ${bt.split}</span></div>
+      <table class="tbl"><thead><tr><th>CONFIGURATION</th><th>IN-SAMPLE</th><th>OUT-OF-SAMPLE</th><th>LONGS</th><th>SHORTS</th></tr></thead><tbody>
+      ${top.map((g) => `<tr class="${g.tf === ch.tf && g.vol === ch.vol && g.k === ch.k && g.level === ch.level && g.div === ch.div ? "hl" : ""}"><td class="sym">${lab(g)}</td><td>${st4(g.is)}</td><td>${st4(g.oos)}</td><td>${st4(g.longs)}</td><td>${st4(g.shorts)}</td></tr>`).join("")}
+      </tbody></table>
+      ${gsLine(bt.equity || [], 1300)}
+      <div class="muted">Highlighted: best in-sample (equity curve above). With ${bt.grid.length} configurations tested, the best in-sample is flattering; trust the out-of-sample column.</div></div>
+    <div class="box"><div class="sec">RECENT TRADES <span class="muted">best in-sample configuration</span></div>
+      <table class="tbl"><thead><tr><th>DATE</th><th>SIDE</th><th>PUSH (σ)</th><th>LEVEL</th><th>DIVERGENCE</th><th>ENTRY</th><th>EXIT</th><th>NET</th></tr></thead><tbody>
+      ${bt.trades.map((x) => `<tr><td>${x.date}</td><td class="${x.side === "LONG" ? "up" : "down"}">${x.side}</td><td>${signed(x.z, 2)}</td><td>${esc(x.level)}</td><td>${x.divergence ? "yes" : "—"}</td><td>${px(bt.symbol, x.entry)}</td><td>${px(bt.symbol, x.exit)}</td><td class="${cls(x.pnl)}">${susd(x.pnl)}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="muted">${sim ? '<span class="down">SIMULATED 1-minute bars: no real edge can exist here.</span> Load real bars to test it.' : esc(bt.source)} Live setups appear on TRADE SIGNALS as "vol_div".</div></div>`;
+}
+
 function lxRender() {
   const v = $("#view");
   if (!v || S.view !== "LX") return;
-  const d = LX.part === "opt" ? LX.opt : LX.sig;
+  const d = LX.data[LX.part];
   const ctl = `<div class="gs-ctl">
     <div class="dt-switch">${OPT_SYMS.map((s) => `<button class="tbtn ${s === LX.sym ? "on" : ""}" data-lxsym="${s}">${s}</button>`).join("")}</div>
-    <div class="dt-switch"><button class="tbtn ${LX.part === "opt" ? "on" : ""}" data-lxpart="opt">OPTIONS LEVELS</button><button class="tbtn ${LX.part === "sig" ? "on" : ""}" data-lxpart="sig">σ-EXTREME FADE</button></div>
+    <div class="dt-switch"><button class="tbtn ${LX.part === "opt" ? "on" : ""}" data-lxpart="opt">OPTIONS LEVELS</button><button class="tbtn ${LX.part === "sig" ? "on" : ""}" data-lxpart="sig">σ-EXTREME FADE</button><button class="tbtn ${LX.part === "vd" ? "on" : ""}" data-lxpart="vd">VOL + LEVEL + RSI DIVERGENCE</button></div>
     ${LX.part === "sig" ? `<label>Compare with <select data-lx="ref"><option value="month" ${LX.ref === "month" ? "selected" : ""}>Same month, earlier years</option><option value="month_weekday" ${LX.ref === "month_weekday" ? "selected" : ""}>Same month &amp; weekday</option><option value="trailing" ${LX.ref === "trailing" ? "selected" : ""}>Last 60 sessions</option></select></label>
       <label>Alert threshold <select data-lx="k">${[2, 2.5, 3].map((k) => `<option value="${k}" ${LX.k === k ? "selected" : ""}>±${k}σ</option>`).join("")}</select></label>` : ""}</div>`;
   if (!d) { v.innerHTML = `<div class="dt">${ctl}<div class="pad muted">${LX.busy ? "Running the backtests…" : ""}</div></div>`; return; }
   if (d.error) { v.innerHTML = `<div class="dt">${ctl}<div class="pad down">${esc(d.error)}</div></div>`; return; }
   const price = LX.part === "opt" ? d.playbook.price : d.today.last;
+  const sub = { opt: "futures around key options levels", sig: "fading statistically extreme moves", vd: "high-volatility push into a key level + RSI divergence" }[LX.part];
   v.innerHTML = `<div class="dt">
-    <div class="dt-head"><div class="dt-title"><div class="dt-sym">${LX.sym}<span>${LX.part === "opt" ? "futures around key options levels" : "fading statistically extreme moves"}</span></div>
+    <div class="dt-head"><div class="dt-title"><div class="dt-sym">${LX.sym}<span>${sub}</span></div>
       <div class="headline"><span class="big">${px(LX.sym, price)}</span></div></div></div>
-    ${ctl}${LX.part === "opt" ? lxRenderOpt(d) : lxRenderSig(d)}</div>`;
+    ${ctl}${LX.part === "opt" ? lxRenderOpt(d) : LX.part === "sig" ? lxRenderSig(d) : lxRenderVd(d)}</div>`;
 }
 
 async function lxLoad() {
   LX.busy = true;
-  if (LX.part === "opt") LX.opt = null; else LX.sig = null;
+  const part = LX.part;
+  LX.data[part] = null;
   lxRender();
   try {
-    if (LX.part === "opt") LX.opt = await api(`/api/strategy/optlevels/${LX.sym}`);
-    else LX.sig = await api(`/api/strategy/sigma/${LX.sym}?ref=${LX.ref}&k=${LX.k}`);
+    const url = { opt: `/api/strategy/optlevels/${LX.sym}`, sig: `/api/strategy/sigma/${LX.sym}?ref=${LX.ref}&k=${LX.k}`,
+      vd: `/api/strategy/voldiv/${LX.sym}` }[part];
+    LX.data[part] = await api(url);
   } catch (e) {
     const err = { error: String(e.message || e) };
-    if (LX.part === "opt") LX.opt = err; else LX.sig = err;
+    LX.data[part] = err;
   }
   LX.busy = false; lxRender();
 }
@@ -171,17 +264,19 @@ VIEWS.LX = async function () {
   setTitle("LEVELS & SIGMA FADE · OPTIONS LEVELS PLAYBOOK · EXTREME-MOVE REVERSION");
   tools("");
   const base = S.universe[S.sel]?.parent || S.sel;
-  if (OPT_SYMS.includes(base) && base !== LX.sym) { LX.sym = base; LX.opt = LX.sig = null; }
-  const d = LX.part === "opt" ? LX.opt : LX.sig;
+  if (OPT_SYMS.includes(base) && base !== LX.sym) { LX.sym = base; LX.data = { opt: null, sig: null, vd: null }; }
+  const d = LX.data[LX.part];
   if (d && !d.error) return lxRender();
   await lxLoad();
 };
 document.addEventListener("click", (ev) => {
   if (S.view !== "LX") return;
   const s = ev.target.closest("[data-lxsym]");
-  if (s) { LX.sym = s.dataset.lxsym; LX.opt = LX.sig = null; lxLoad(); return; }
+  if (s) { LX.sym = s.dataset.lxsym; LX.data = { opt: null, sig: null, vd: null }; lxLoad(); return; }
+  const e = ev.target.closest("[data-lxex]");
+  if (e) { LX.ex = e.dataset.lxex; lxRender(); return; }
   const p = ev.target.closest("[data-lxpart]");
-  if (p) { LX.part = p.dataset.lxpart; const d = LX.part === "opt" ? LX.opt : LX.sig; if (d && !d.error) lxRender(); else lxLoad(); }
+  if (p) { LX.part = p.dataset.lxpart; const d = LX.data[LX.part]; if (d && !d.error) lxRender(); else lxLoad(); }
 });
 document.addEventListener("change", (ev) => {
   const k = ev.target.dataset?.lx;

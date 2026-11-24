@@ -425,6 +425,20 @@ def strat_sigma(symbol: str, ref: str = "month", k: float = 2.5):
                    "backtest": extremes.backtest(hub.md, sym, ref, rules.commission_per_side)})
 
 
+@app.get("/api/strategy/voldiv/{symbol}")
+def strat_voldiv(symbol: str, tf: int = 5, k: float = 1.5):
+    from .intraday import voldiv
+    sym = universe.get(_sym(symbol)).data_symbol
+    if tf not in (5, 15):
+        raise HTTPException(400, "tf must be 5 or 15")
+    if not 0.5 <= k <= 4:
+        raise HTTPException(400, "k must be between 0.5 and 4")
+    bt = voldiv.backtest(hub.md, sym, hub.prop.rules.commission_per_side)
+    ex_date = bt["full_setup_dates"][-1][0] if bt.get("full_setup_dates") else None
+    return _clean({"today": voldiv.today(hub.md, sym, tf, k), "backtest": bt,
+                   "example": voldiv.today(hub.md, sym, 5, k, on=ex_date) if ex_date else None})
+
+
 @app.get("/api/strategy/optlevels/{symbol}")
 def strat_optlevels(symbol: str, mode: str | None = None):
     from .options import chains, levels

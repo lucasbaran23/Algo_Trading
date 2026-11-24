@@ -101,6 +101,7 @@ class SignalManager:
                 "sigma": self._sigma_state(hub, sym, c, now_et),
                 "optlv": self._opt_levels(hub, sym),
             }
+            ctx["voldiv"] = self._voldiv_state(hub, sym, ctx)
             for plan in setups.detect(ctx):
                 key = (sym, plan["setup"], plan["side"] if plan["setup"] == "orb" else 0)
                 if any(s["symbol"] == sym and s["setup"] == plan["setup"] and s["status"] in OPEN and
@@ -132,6 +133,48 @@ class SignalManager:
             return {"z": z, "sd_px": ref["sd"] * ref["pc"], "pc": ref["pc"], "in_window": 15 <= mins - o_s <= (c_s - o_s) - 45}
         except Exception:  # noqa: BLE001
             return None
+
+    def _voldiv_state(self, hub, sym, ctx) -> dict | None:
+        """Live check of the vol + level + RSI divergence setup on the session's 1-minute bars."""
+        try:
+            from ..intraday import voldiv as vdm
+            bars = ctx["session"]["bars"]
+            sg = ctx.get("sigma")
+            if not sg or not sg["in_window"] or len(bars) < 100:
+                return None
+            import numpy as np
+            a = np.array([[x[1], x[2], x[3], x[4]] for x in bars], float)
+            m = np.arange(1, len(a) + 1)
+            b = vdm.tf_bars(m, a[:, 0], a[:, 1], a[:, 2], a[:, 3], 5)
+            if b is None or len(b["c"]) < 20:
+                return None
+            r = vdm.rsi(b["c"])
+            n_last = len(b["c"]) - 1                       # the bar that just confirmed
+            ref = {"sd": sg["sd_px"] / sg["pc"], "gs": 0.2}
+            for n in range(max(15, n_last - 3), n_last):
+                for side in (1, -1):
+                    p = vdm.divergence(b, r, n, side)
+                    if p is None:
+                        continue
+                    if (b["c"][n_last] - (b["h"][n] if side > 0 else b["l"][n])) * side <= 0:
+                        continue
+                    legs = [vdm.leg_z(b, q, ref["sd"], ref["gs"], 390.0, 5, sg["pc"]) for q in range(max(6, n - 30), n + 1)]
+                    z = min(legs) if side > 0 else max(legs)
+                    if z * side > -1.5:
+                        continue
+                    ext = float(b["l"][n:].min() if side > 0 else b["h"][n:].max())
+                    lv = ctx["levels"]
+                    levels = {k: lv.get(k) for k in ("prev_high", "prev_low", "prev_close")}
+                    ol = ctx.get("optlv") or {}
+                    levels.update({k: ol.get(k) for k in ("call_wall", "put_wall", "flip", "max_pain")})
+                    hit = vdm.near_level(float(b["l"][n] if side > 0 else b["h"][n]), levels, 0.25 * sg["sd_px"])
+                    if not hit:
+                        continue
+                    return {"side": side, "ext": ext, "sd_px": sg["sd_px"], "z": z, "level": vdm.LEVEL_NAMES.get(hit[0], hit[0]),
+                            "level_px": hit[2], "rsi_now": float(r[n]), "rsi_prior": float(r[p])}
+        except Exception:  # noqa: BLE001
+            return None
+        return None
 
     def _opt_levels(self, hub, sym) -> dict | None:
         from ..options import chains

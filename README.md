@@ -306,6 +306,40 @@ shorts are intraday-only at half size.
 
 API: `GET /api/strategy/optlevels/{symbol}`, `GET /api/strategy/sigma/{symbol}?ref=month&k=2.5`.
 
+### Vol push + key level + RSI divergence
+![Vol + level + RSI divergence](docs/screenshots/43-voldiv-gc-chart.png)
+
+A reversal setup with three filters and a trigger. Long side shown; shorts mirror it.
+
+1. **Volatility.** The fastest 30-minute leg in the last 2½ hours moved at least 1.5σ for that
+   length of time. σ comes from the same month in earlier years.
+2. **Key level.** The new low is within 0.25 daily σ of one of these levels:
+   * prior-day high, low or close, or prior-week high or low;
+   * for options markets, the put wall, call wall, gamma flip or max pain.
+3. **RSI divergence (5-min bars, RSI 14).** Price makes a lower low than an earlier swing low, but
+   RSI makes a higher low. RSI must have been below 40 at the first low.
+
+**Trigger.** Within 3 bars, a 5-minute close above the divergence bar's high.
+
+**Risk.**
+* Stop 0.1σ beyond the extreme.
+* Target 2R, or VWAP if it is nearer but at least 1R away.
+* Flat by the close.
+
+**What the screen shows:**
+* Candles with the key levels, and the RSI panel with each divergence drawn and graded:
+  * **A+**: all three filters;
+  * **B**: two of three;
+  * **C**: divergence only.
+* The latest A+ example session.
+* An ablation table showing what each filter adds.
+* 32 configurations (5- vs 15-minute bars, volatility definition and strength, level on/off,
+  divergence on/off) with in-sample / out-of-sample results.
+
+Live: the `vol_div` setup on Trade Signals.
+
+API: `GET /api/strategy/voldiv/{symbol}`.
+
 ## Gamma scalp lab (`GS`)
 
 ![Gamma scalp lab](docs/screenshots/30-gamma-scalp-ng.png)
