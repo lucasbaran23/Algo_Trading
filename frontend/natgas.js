@@ -114,6 +114,91 @@ function ngStorageReport() {
     <div class="muted">Released Thursdays 10:30 ET (Wednesday in Thanksgiving week). Green = below normal (bullish for price), red = above.</div></div>`;
 }
 
+// ------------------------------------------------------------------ supply & demand balance
+function ngBalChart(b) {
+  const sr = b.series.filter((r) => r.SUPPLY != null);
+  if (!sr.length) return "";
+  const W = 640, H = 230, padL = 40, padB = 22, n = sr.length;
+  const vals = sr.flatMap((r) => [r.SUPPLY, r.DEMAND]);
+  const lo = Math.min(...vals) * 0.97, hi = Math.max(...vals) * 1.02, bmax = Math.max(...sr.map((r) => Math.abs(r.BAL || 0)), 1);
+  const x = (i) => padL + (i + 0.5) * ((W - padL - 8) / n), bw = (W - padL - 8) / n;
+  const y = (v) => 8 + (1 - (v - lo) / (hi - lo)) * (H - padB - 60);
+  const yb0 = H - padB - 26, yb = (v) => yb0 - (v / bmax) * 24;
+  const fi = sr.findIndex((r) => r.forecast);
+  const line = (k, col) => `<polyline fill="none" stroke-width="2" style="stroke:${col}" points="${sr.map((r, i) => `${x(i)},${y(r[k])}`).join(" ")}"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="opt-svg" role="img" aria-label="Monthly U.S. gas supply and demand, with the implied storage change below">
+    ${fi >= 0 ? `<rect x="${x(fi) - bw / 2}" y="4" width="${W - 8 - (x(fi) - bw / 2)}" height="${H - padB - 4}" style="fill:var(--ink);opacity:.05"/>
+      <text x="${x(fi) - bw / 2 + 4}" y="16" font-size="10" style="fill:var(--muted)">EIA forecast →</text>` : ""}
+    ${line("DEMAND", "var(--s2)")}${line("SUPPLY", "var(--s1)")}
+    <line x1="${padL}" x2="${W - 8}" y1="${yb0}" y2="${yb0}" style="stroke:var(--line)"/>
+    ${sr.map((r, i) => `<rect x="${x(i) - bw * 0.35}" width="${bw * 0.7}" y="${Math.min(yb(r.BAL), yb0)}" height="${Math.abs(yb(r.BAL) - yb0)}" style="fill:${r.BAL >= 0 ? "var(--down)" : "var(--up)"};opacity:.75"><title>${r.month}: ${signed(r.BAL, 1)} Bcf/d ${r.BAL >= 0 ? "injection" : "withdrawal"}</title></rect>`).join("")}
+    ${sr.map((r, i) => r.month.endsWith("-01") ? `<text x="${x(i)}" y="${H - 6}" font-size="9" text-anchor="middle" style="fill:var(--muted)">${r.month.slice(0, 4)}</text>` : "").join("")}
+    <text x="4" y="${y(hi / 1.02) + 4}" font-size="9" style="fill:var(--muted)">${fx(hi / 1.02, 0)}</text><text x="4" y="${y(lo / 0.97)}" font-size="9" style="fill:var(--muted)">${fx(lo / 0.97, 0)}</text>
+    <text x="4" y="${yb0 + 4}" font-size="9" style="fill:var(--muted)">0</text></svg>
+    <div class="legend"><span><i style="background:var(--s1)"></i>Supply</span><span><i style="background:var(--s2)"></i>Demand</span><span><i style="background:var(--down)"></i>Storage injection (surplus)</span><span><i style="background:var(--up)"></i>Withdrawal (deficit)</span></div>`;
+}
+
+function ngDrivers(b) {
+  const d = b.drivers.filter((x) => Math.abs(x.yoy_bcfd) >= 0.05);
+  if (!d.length) return "";
+  const mx = Math.max(...d.map((x) => Math.abs(x.yoy_bcfd)), 0.5);
+  return d.map((x) => {
+    const bull = (x.side === "demand") === (x.yoy_bcfd > 0);        // more demand or less supply = tighter
+    return `<div class="sigrow"><span class="lbl">${esc(x.name)} <span class="muted">${x.side}</span></span><div class="bar"><i style="${x.yoy_bcfd >= 0 ? "left:50%" : "right:50%"};width:${Math.min(50, Math.abs(x.yoy_bcfd) / mx * 50)}%;background:var(--${bull ? "up" : "down"})"></i></div><span class="num ${bull ? "up" : "down"}">${signed(x.yoy_bcfd, 2)}</span></div>`;
+  }).join("");
+}
+
+function ngWeekly(wk) {
+  if (!wk?.available) return '<div class="muted">Needs real weather and storage history (live mode).</div>';
+  const w = wk.weeks.slice(-26), W = 640, H = 150, padL = 36, bw = (W - padL - 8) / w.length;
+  const mx = Math.max(...w.map((r) => Math.abs(r.residual_bcfd)), 1), y0 = H / 2 - 6;
+  return `<svg viewBox="0 0 ${W} ${H}" class="opt-svg" role="img" aria-label="Weekly storage change minus what weather explains">
+    <line x1="${padL}" x2="${W - 8}" y1="${y0}" y2="${y0}" style="stroke:var(--line)"/>
+    ${w.map((r, i) => `<rect x="${padL + i * bw + 2}" width="${bw - 4}" y="${r.residual_bcfd >= 0 ? y0 - r.residual_bcfd / mx * (y0 - 8) : y0}" height="${Math.abs(r.residual_bcfd) / mx * (y0 - 8)}" rx="1.5" style="fill:${r.residual_bcfd >= 0 ? "var(--down)" : "var(--up)"}"><title>Week ending ${r.date}: actual ${signed(r.actual, 0)} Bcf vs weather model ${signed(r.weather_model, 0)} (${r.hdd} HDD, ${r.cdd} CDD) → ${signed(r.residual_bcfd, 2)} Bcf/d</title></rect>`).join("")}
+    <text x="4" y="14" font-size="9" style="fill:var(--muted)">looser</text><text x="4" y="${H - 18}" font-size="9" style="fill:var(--muted)">tighter</text>
+    <text x="${padL}" y="${H - 4}" font-size="9" style="fill:var(--muted)">${w[0].date}</text><text x="${W - 8}" y="${H - 4}" font-size="9" text-anchor="end" style="fill:var(--muted)">${w[w.length - 1].date}</text></svg>`;
+}
+
+function ngBalance() {
+  const b = NGD.bal;
+  if (!b) return "";
+  const t = b.totals, live = b.source.startsWith("LIVE");
+  const get = (code) => [...b.supply, ...b.demand].find((x) => x.code === code) || {};
+  const tl = (lab, code, flip) => { const g = get(code); return tile(lab, `${fx(g.value, 1)} <small class="${cls(flip ? -g.yoy : g.yoy)}">${signed(g.yoy, 1)} y/y</small>`); };
+  const rc = get("NGRCPUS").value + get("NGCCPUS").value, rcy = get("NGRCPUS").yoy + get("NGCCPUS").yoy;
+  const months = b.table, codes = [["NGPRPUS", "Dry production"], ["NGIMPUS_PIPE", "Canada imports"], ["SUPPLY", "TOTAL SUPPLY"],
+    ["NGRCPUS", "Residential"], ["NGCCPUS", "Commercial"], ["NGINX", "Industrial"], ["NGEPCON", "Power burn"], ["NGEXPUS_LNG", "LNG exports"],
+    ["NGEXPUS_PIPE", "Mexico exports"], ["NGLPPUS", "Lease & plant"], ["NGACPUS", "Pipeline fuel"], ["DEMAND", "TOTAL DEMAND"], ["BAL", "STORAGE CHANGE"], ["NGWGPUS", "Storage, end of month (Bcf)"]];
+  const show = months.filter((_, i) => i >= months.length - 18).filter((_, i, a) => i >= a.findIndex((m) => m.forecast) - 6 && i < a.findIndex((m) => m.forecast) + 7);
+  return `<div class="box"><div class="sec">SUPPLY &amp; DEMAND BALANCE <span class="muted">${esc(b.source)}${live ? ` · ${esc(b.forecast_date)} · actuals to ${b.last_actual}, forecast from ${b.forecast_start}` : " · synthetic"} · Bcf/d</span></div>
+    <div class="tiles">
+      ${tile(`Supply ${b.current_month}`, `${fx(t.supply, 1)} <small class="${cls(-t.supply_yoy)}">${signed(t.supply_yoy, 1)} y/y</small>`)}
+      ${tile(`Demand ${b.current_month}`, `${fx(t.demand, 1)} <small class="${cls(t.demand_yoy)}">${signed(t.demand_yoy, 1)} y/y</small>`)}
+      ${tile("Implied storage change", `${signed(t.balance, 1)} <small>${t.balance >= 0 ? "injection" : "withdrawal"}</small>`, t.balance_yoy > 0 ? "down" : "up")}
+      ${tl("Dry production", "NGPRPUS", true)}${tl("LNG exports (≈ feedgas)", "NGEXPUS_LNG")}${tl("Power burn", "NGEPCON")}
+      ${tile("Res + Com", `${fx(rc, 1)} <small class="${cls(rcy)}">${signed(rcy, 1)} y/y</small>`)}${tl("Industrial", "NGINX")}${tl("Mexico exports", "NGEXPUS_PIPE")}${tl("Canada imports", "NGIMPUS_PIPE", true)}
+    </div>
+    <ul class="dt-bullets">${b.bullets.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+    <div class="dt-row dt-r2b">
+      <div><div class="sec">SUPPLY vs DEMAND, MONTHLY</div>${ngBalChart(b)}</div>
+      <div><div class="sec">WHAT'S CHANGING <span class="muted">next 6 months vs a year earlier · green = tightens (bullish)</span></div>${ngDrivers(b)}</div>
+    </div>
+    <div class="sec">MONTH BY MONTH <span class="muted">shaded = EIA forecast · hover for y/y</span></div>
+    <div style="overflow-x:auto"><table class="tbl ng-bal"><thead><tr><th></th>${show.map((m) => `<th class="${m.forecast ? "fc" : ""}">${m.month}</th>`).join("")}</tr></thead><tbody>
+      ${codes.map(([c, lab]) => `<tr class="${["SUPPLY", "DEMAND", "BAL"].includes(c) ? "hl" : ""}"><td class="sym">${lab}</td>${show.map((m) => `<td class="${m.forecast ? "fc" : ""} ${c === "BAL" ? (m[c] >= 0 ? "down" : "up") : ""}" title="${m[c + "_yoy"] == null ? "" : `y/y ${signed(m[c + "_yoy"], 2)}`}">${m[c] == null ? "—" : c === "NGWGPUS" ? fx(m[c], 0) : c === "BAL" ? signed(m[c], 1) : fx(m[c], 1)}</td>`).join("")}</tr>`).join("")}
+    </tbody></table></div>
+    <div class="dt-row dt-r2b">
+      <div><div class="sec">PRODUCTION BY BASIN <span class="muted">marketed, ${b.last_actual}</span></div>
+        <table class="tbl"><thead><tr><th>BASIN</th><th>BCF/D</th><th>Y/Y</th></tr></thead><tbody>
+        ${b.basins.map((x) => `<tr><td class="sym">${esc(x.name)}</td><td>${fx(x.value, 1)}</td><td class="${cls(-x.yoy)}">${signed(x.yoy, 2)}</td></tr>`).join("")}</tbody></table>
+        ${b.end_of_march ? `<div class="kv" style="margin-top:6px"><span>End-of-March ${b.end_of_march.month.slice(0, 4)} storage (EIA)</span><span>${fx(b.end_of_march.forecast_bcf, 0)} Bcf vs 5-yr ${fx(b.end_of_march.avg5_bcf, 0)} (<b class="${cls(-b.end_of_march.vs_avg_pct)}">${signed(b.end_of_march.vs_avg_pct, 1)}%</b>)</span></div>` : ""}</div>
+      <div><div class="sec">WEEKLY: TIGHTER OR LOOSER THAN WEATHER? <span class="muted">${b.weekly?.available ? `last 4 reports ${signed(b.weekly.last4_bcfd, 2)} Bcf/d · ${esc(b.weekly.verdict)}` : ""}</span></div>${ngWeekly(b.weekly)}
+        <div class="muted">Each bar: the EIA weekly storage change minus what that week's heating/cooling degree days normally produce (fitted on the past 3 years). Below zero = more gas left storage than weather explains: LNG, power or exports pulling harder, or production slipping.</div></div>
+    </div>
+    <div class="muted">${live ? "Monthly data: EIA Short-Term Energy Outlook (history + forecast, updated monthly). Weekly: computed from EIA storage and Open-Meteo weather." : "Simulated balance. Set DATA_MODE=live for EIA data."}
+      Daily pipeline flows (LNG feedgas by terminal, daily production) need a paid vendor (Wood Mackenzie, LSEG, Criterion); the monthly LNG export figure is the free proxy.</div></div>`;
+}
+
 function ngDataStatus() {
   const ds = NGD.ds;
   if (!ds) return "";
@@ -258,7 +343,7 @@ async function ngLoad() {
   [NGD.o, NGD.s, NGD.w, NGD.k, NGD.ins, NGD.dyn, NGD.opt, NGD.st] = await Promise.all([api("/api/natgas/outlook"), api("/api/natgas/seasonality"),
     api("/api/natgas/weather"), api("/api/natgas/contracts"), api("/api/snapshot/NG"), api("/api/natgas/dynamics"), api("/api/options/NG"),
     api("/api/natgas/storage").catch(() => null)]);
-  NGD.ds = await api("/api/datastatus/NG").catch(() => null);
+  [NGD.ds, NGD.bal] = await Promise.all([api("/api/datastatus/NG").catch(() => null), api("/api/natgas/balance").catch(() => null)]);
 }
 function ngRender() {
   const v = $("#view");
@@ -272,6 +357,7 @@ function ngRender() {
         <button class="tbtn" data-ngjump="DT">INSIDER ›</button><button class="tbtn" data-ngjump="OPT">OPTIONS ›</button><button class="tbtn" data-ngjump="TS">SIGNALS ›</button><button class="tbtn" data-ngjump="IR">RESEARCH ›</button></div></div>
     ${ngDataStatus()}
     <div class="dt-row ng-r1">${ngOutlook()}<div class="ng-col">${ngContracts()}${ngOptions()}${ngStorage()}</div></div>
+    ${ngBalance()}
     <div class="dt-row dt-r2b">${ngCurve()}${ngStorageReport()}</div>
     ${ngDynamics()}
     <div class="dt-row dt-r2b">${ngWeather()}${ngExpiry()}</div>

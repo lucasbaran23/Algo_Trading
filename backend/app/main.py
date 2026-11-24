@@ -474,6 +474,14 @@ def natgas_contracts():
             "curve": curve.strip(hub.md, 18, day), "rolls": hub.md.rolls.get("NG", [])[-6:]}
 
 
+@app.get("/api/natgas/balance")
+def natgas_balance():
+    """Supply & demand balance: production, imports, LNG, Mexico, power burn, res/com, industrial (EIA STEO),
+    plus the weekly weather-adjusted balance from EIA storage and real weather."""
+    from .natgas import balance
+    return _clean(balance.balance(hub.md))
+
+
 @app.get("/api/datastatus/{symbol}")
 def data_status(symbol: str = "NG"):
     """Where every number on the NG screens comes from right now, and how fresh it is."""

@@ -52,3 +52,39 @@ def test_data_status_and_curve_in_sim_mode():
         assert k["curve"]["summary"]["shape"] in ("CONTANGO", "BACKWARDATION", "FLAT")
         st = c.get("/api/natgas/storage").json()
         assert st["sd"]["stocks"] > 0
+
+
+def test_balance_identity_and_endpoint():
+    from app.natgas import balance as nb
+    with TestClient(app) as c:
+        b = c.get("/api/natgas/balance").json()
+    assert b["source"] == "SIM"
+    t = b["totals"]
+    assert abs(t["supply"] - sum(x["value"] for x in b["supply"])) < 0.05
+    assert abs(t["demand"] - sum(x["value"] for x in b["demand"])) < 0.05
+    codes = {x["code"] for x in b["demand"]}
+    assert {"NGEPCON", "NGEXPUS_LNG", "NGEXPUS_PIPE", "NGRCPUS", "NGINX"} <= codes
+    assert any(r["forecast"] for r in b["table"]) and any(not r["forecast"] for r in b["table"])
+    assert b["bullets"] and b["drivers"]
+    assert nb.SUPPLY and nb.DEMAND
+
+
+def test_steo_parser_reads_codes_and_forecast_shading(tmp_path):
+    import openpyxl
+    from openpyxl.styles import Color, PatternFill
+    from app.natgas import balance as nb
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "5atab"
+    ws.cell(3, 3, 2026)
+    for j, m in enumerate(["Jan", "Feb", "Mar"]):
+        ws.cell(4, 3 + j, m)
+    ws.cell(6, 1, "NGPRPUS")
+    for j, v in enumerate([110.0, 111.0, 112.0]):
+        c = ws.cell(6, 3 + j, v)
+        c.fill = PatternFill("solid", fgColor=Color(theme=0, tint=-0.05 if j == 2 else 0.0))
+    p = tmp_path / "steo.xlsx"
+    wb.save(p)
+    df, fc, _ = nb.parse_steo(p)
+    assert list(df["NGPRPUS"]) == [110.0, 111.0, 112.0]
+    assert fc == pd.Timestamp("2026-03-01")

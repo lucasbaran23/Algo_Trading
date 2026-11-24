@@ -416,3 +416,7 @@ label.opt { display: flex; gap: 4px; align-items: center; color: var(--ink-2); c
 .ng-ds .tbl { table-layout: fixed; width: 100%; }
 .ng-ds .tbl th, .ng-ds .tbl td { text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .ng-ds .tbl th:nth-child(1) { width: 18%; } .ng-ds .tbl th:nth-child(2) { width: 9%; } .ng-ds .tbl th:nth-child(3) { width: 28%; }
+
+.ng-bal th.fc, .ng-bal td.fc { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.ng-bal td, .ng-bal th { white-space: nowrap; }
+.tile small { font-size: 11px; font-weight: 500; margin-left: 4px; }

@@ -261,6 +261,7 @@ Set `DATA_MODE=live` in `.env` and restart. No API keys are needed for NG.
 | Live price and session bars | Yahoo 1-minute, polled every 30 s in a background thread | `LIVE_FOCUS=NG` (other markets: last price every 2 min) |
 | Intraday history | Yahoo 1-minute (last 30 days) + 5-minute (last 60 days) | Saved to `backend/.cache/intraday/`. It **grows every day the terminal runs**. For years of history, import a CSV |
 | Futures curve | Yahoo per-contract (`NGF27.NYM`, …), 18 months | M1–M2, winter/summer strips, winter premium, H/J |
+| Supply & demand balance | EIA Short-Term Energy Outlook (`www.eia.gov`, keyless) | See below |
 | Storage | EIA weekly report + full history by region (`ir.eia.gov`) | Latest report with regions, vs year ago and vs 5-year |
 | Weather | Open-Meteo archive + 16-day forecast, 12 gas-weighted cities | A forecast snapshot is saved daily; real revision sensitivity kicks in after ~60 days |
 | COT | CFTC disaggregated | Weekly |
@@ -270,6 +271,31 @@ Set `DATA_MODE=live` in `.env` and restart. No API keys are needed for NG.
 **DATA SOURCES panel.** The Nat Gas Desk opens with this panel. It shows every feed, its status (LIVE, SIM or ERROR) and how fresh it is.
 
 **Before selling the product.** Yahoo data is unofficial and not licensed for redistribution. Swap in a licensed CME feed (e.g. Databento) first, and check Open-Meteo's commercial terms.
+
+### Supply & demand balance (Nat Gas Desk)
+![Supply and demand](docs/screenshots/57-live-ng-balance.png)
+
+All in Bcf/d.
+
+**Monthly balance (EIA STEO, history + forecast).**
+* Supply: dry production (and marketed production by basin), Canada pipeline imports.
+* Demand:
+  * LNG exports (≈ feedgas), Mexico pipeline exports;
+  * power burn, residential, commercial, industrial;
+  * lease & plant fuel and pipeline fuel.
+* The implied storage change, and EIA's end-of-March storage forecast vs the 5-year average.
+
+**What's changing.** The year-on-year change of each component over the next 6 months, colored by
+whether it tightens (bullish) or loosens (bearish) the balance.
+
+**Weekly weather-adjusted balance.**
+* The EIA weekly storage change is compared with what that week's gas-weighted heating and cooling
+  degree days normally produce (fitted on the past 3 years).
+* Persistent negative bars = the market is tighter than weather explains (LNG, power or exports
+  pulling harder, or production slipping).
+
+**Not available free.** Daily pipeline flows (LNG feedgas by terminal, daily production) need a paid
+vendor (Wood Mackenzie, LSEG, Criterion).
 
 ## Levels & σ-fade (`LX`)
 

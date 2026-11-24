@@ -66,17 +66,31 @@ def _fetch(url: str, params: dict) -> list[pd.Series]:
     return [pd.Series(d["daily"]["temperature_2m_mean"], index=pd.to_datetime(d["daily"]["time"]), dtype=float) for d in data]
 
 
+def _weighted_cdd(daily_by_city: list[pd.Series]) -> pd.Series:
+    w = np.array([c[3] for c in CITIES])
+    df = pd.concat(daily_by_city, axis=1)
+    return ((df - 65.0).clip(lower=0) * w).sum(axis=1) / w.sum()
+
+
+_CDD: dict = {}
+
+
 def _live(cache_dir: Path, years: int) -> tuple[pd.Series, pd.Series]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     f = cache_dir / "ng_weather.json"
+    ser = lambda d: pd.Series(d["v"], index=pd.to_datetime(d["i"]))  # noqa: E731
     if f.exists() and time.time() - f.stat().st_mtime < 6 * 3600:
         raw = json.loads(f.read_text())
-        return pd.Series(raw["obs"]["v"], index=pd.to_datetime(raw["obs"]["i"])), pd.Series(raw["fc"]["v"], index=pd.to_datetime(raw["fc"]["i"]))
+        if "obs_cdd" in raw:
+            _CDD["obs"] = ser(raw["obs_cdd"])
+            return ser(raw["obs"]), ser(raw["fc"])
     end = date.today() - timedelta(days=6)                      # the archive lags by a few days
-    obs = _weighted_hdd(_fetch(ARCHIVE, {"start_date": (end - timedelta(days=365 * years)).isoformat(), "end_date": end.isoformat()}))
+    temps = _fetch(ARCHIVE, {"start_date": (end - timedelta(days=365 * years)).isoformat(), "end_date": end.isoformat()})
+    obs, obs_cdd = _weighted_hdd(temps), _weighted_cdd(temps)
     fc = _weighted_hdd(_fetch(FORECAST, {"forecast_days": 16, "past_days": 7}))
-    f.write_text(json.dumps({"obs": {"i": [str(x.date()) for x in obs.index], "v": [float(v) for v in obs.fillna(0)]},
-                             "fc": {"i": [str(x.date()) for x in fc.index], "v": [float(v) for v in fc.fillna(0)]}}))
+    enc = lambda x: {"i": [str(t.date()) for t in x.index], "v": [float(v) for v in x.fillna(0)]}  # noqa: E731
+    f.write_text(json.dumps({"obs": enc(obs), "obs_cdd": enc(obs_cdd), "fc": enc(fc)}))
+    _CDD["obs"] = obs_cdd.dropna()
     return obs.dropna(), fc.dropna()
 
 
@@ -154,7 +168,7 @@ def weather(md, settings) -> dict:
                  [{"date": str(d.date()), "hdd": round(float(v), 1), "normal": round(float(n), 1), "kind": "fc"}
                   for d, v, n in zip(f14.index, f14.values, f_norm)],
         "cities": [c[0] for c in CITIES],
-        "_obs": obs, "_norm": norm,
+        "_obs": obs, "_norm": norm, "_obs_cdd": _CDD.get("obs") if src != "SIM" else None,
     }
     _CACHE["w"] = (time.time(), out)
     return out
