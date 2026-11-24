@@ -6,10 +6,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+ENV_INFO: dict = {"path": None, "note": ""}
+
+
 def _load_dotenv() -> None:
-    env_path = Path(__file__).resolve().parents[2] / ".env"
+    root = Path(__file__).resolve().parents[2]
+    env_path = root / ".env"
     if not env_path.exists():
-        return
+        # Windows Notepad often saves ".env" as ".env.txt"
+        alt = next((p for p in (root / ".env.txt", root / "backend" / ".env") if p.exists()), None)
+        if alt is None:
+            ENV_INFO["note"] = f"no .env file found in {root}"
+            return
+        ENV_INFO["note"] = f"using {alt.name} (expected .env in {root})"
+        env_path = alt
+    ENV_INFO["path"] = str(env_path)
     for line in env_path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:

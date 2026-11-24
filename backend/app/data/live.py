@@ -26,6 +26,9 @@ EIA_SERIES_URL = "https://api.eia.gov/v2/seriesid/{series}"
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 _HEADERS = {"User-Agent": "commodities-terminal/0.1"}
+# Yahoo rejects unknown clients (HTTP 429/403) from many home connections; use a normal browser string
+_YH = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+       "Accept": "application/json,text/plain,*/*"}
 
 
 def _cached_json(cache_dir: Path, key: str, ttl_s: int, fetch) -> object:
@@ -155,7 +158,7 @@ def fetch_yahoo_daily(c: Contract, cache_dir: Path, rng: str = "10y") -> pd.Data
         r = httpx.get(
             YAHOO_CHART_URL.format(symbol=c.yahoo),
             params={"range": rng, "interval": "1d"},
-            headers=_HEADERS,
+            headers=_YH,
             timeout=20,
         )
         r.raise_for_status()
@@ -186,7 +189,7 @@ def fetch_yahoo_last(c: Contract) -> float:
     r = httpx.get(
         YAHOO_CHART_URL.format(symbol=c.yahoo),
         params={"range": "1d", "interval": "1m"},
-        headers=_HEADERS,
+        headers=_YH,
         timeout=10,
     )
     r.raise_for_status()

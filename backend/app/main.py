@@ -530,7 +530,17 @@ def data_status(symbol: str = "NG"):
         rows.append({"what": "Options chain", "source": "Your CSV" if has else "Simulated (no free NG options feed)",
                      "status": "LIVE" if has else "SIM",
                      "detail": "used everywhere" if has else "shown for illustration; excluded from live signals and the level ladder in live mode"})
-    return {"symbol": sym, "mode": md.settings.data_mode, "rows": rows}
+    from .config import ENV_INFO
+    errs = src.get("errors") or {}
+    for r in rows:
+        key = {"Daily prices": "prices", "COT positioning": "cot", "Storage (EIA weekly)": "inventory"}.get(r["what"])
+        if key in errs and r["status"] != "LIVE":
+            r["status"], r["detail"] = "ERROR", f"fell back to simulated: {errs[key]}"
+    hint = None
+    if md.settings.data_mode != "live":
+        hint = (f"DATA_MODE is '{md.settings.data_mode}'. Put DATA_MODE=live in the .env file next to README.md and restart. "
+                f"({ENV_INFO.get('note') or 'loaded ' + str(ENV_INFO.get('path'))})")
+    return {"symbol": sym, "mode": md.settings.data_mode, "rows": rows, "env": ENV_INFO, "hint": hint}
 
 
 @app.get("/api/natgas/storage")

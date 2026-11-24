@@ -203,12 +203,12 @@ function ngDataStatus() {
   const ds = NGD.ds;
   if (!ds) return "";
   const col = { LIVE: "live", SIM: "sim", ERROR: "bad", NA: "sim" };
-  return `<details class="box ng-ds" ${ds.rows.some((r) => r.status !== "LIVE") ? "" : ""}><summary class="sec">DATA SOURCES <span class="muted">mode ${ds.mode.toUpperCase()} ·
+  return `<details class="box ng-ds" ${ds.mode !== "live" || ds.rows.some((r) => r.status === "ERROR") ? "open" : ""}><summary class="sec">DATA SOURCES <span class="muted">mode ${ds.mode.toUpperCase()} ·
       ${ds.rows.filter((r) => r.status === "LIVE").length}/${ds.rows.length} live${ds.rows.some((r) => r.status === "ERROR") ? ' · <span class="down">errors</span>' : ""} · click to expand</span></summary>
     <table class="tbl"><thead><tr><th>DATA</th><th>STATUS</th><th>SOURCE</th><th>DETAIL</th></tr></thead><tbody>
     ${ds.rows.map((r) => `<tr><td class="sym">${esc(r.what)}</td><td><span class="badge ${col[r.status] || "sim"}">${r.status}</span></td><td>${esc(r.source)}</td><td class="muted">${esc(r.detail || "")}</td></tr>`).join("")}
     </tbody></table>
-    ${ds.mode === "sim" ? '<div class="notice">Running on simulated data. Set DATA_MODE=live in .env to use real prices, curve, EIA storage, weather, COT and news.</div>' : ""}</details>`;
+    ${ds.hint ? `<div class="notice">${esc(ds.hint)}</div>` : ""}</details>`;
 }
 
 function ngStorage() {

@@ -104,6 +104,7 @@ class MarketData:
                         src["adjusted"] = f"back-adjusted for {len(self.rolls[sym])} rolls"
                 except Exception as exc:  # noqa: BLE001 - any source failure falls back to sim
                     log.warning("Yahoo prices failed for %s: %s", sym, exc)
+                    src.setdefault("errors", {})["prices"] = f"{type(exc).__name__}: {str(exc)[:160]}"
             if prices is None:
                 prices = sim.daily_history(c, s.sim_seed)
             self.daily[sym] = prices
@@ -115,6 +116,7 @@ class MarketData:
                     src["cot"] = "LIVE"
                 except Exception as exc:  # noqa: BLE001
                     log.warning("CFTC COT failed for %s: %s", sym, exc)
+                    src.setdefault("errors", {})["cot"] = f"{type(exc).__name__}: {str(exc)[:160]}"
             self.cot[sym] = cot if cot is not None else sim.cot_history(c, prices, s.sim_seed)
 
             inv = None
@@ -127,6 +129,7 @@ class MarketData:
                     src["inventory"] = "LIVE"
                 except Exception as exc:  # noqa: BLE001
                     log.warning("EIA failed for %s: %s", sym, exc)
+                    src.setdefault("errors", {})["inventory"] = f"{type(exc).__name__}: {str(exc)[:160]}"
             if inv is None and c.eia_series:
                 inv = sim.inventory_history(c, prices, s.sim_seed)
                 src["inventory"] = "SIM"
@@ -139,12 +142,26 @@ class MarketData:
                 open=float(last.close), high=float(last.close), low=float(last.close),
                 last=float(last.close), prev_close=float(prev.close),
             )
+        self._log_summary()
         self.ticker = sim.TickSimulator(
             [universe.get(s_) for s_ in universe.DATA_SYMBOLS],
             {k: v.last for k, v in self.sessions.items()},
             s.sim_seed,
         )
         self.loaded_at = datetime.now(timezone.utc)
+
+    def _log_summary(self) -> None:
+        from ..config import ENV_INFO
+        s = self.settings
+        log.warning("DATA_MODE=%s  (.env: %s%s)", s.data_mode, ENV_INFO.get("path") or "not found",
+                    f" - {ENV_INFO['note']}" if ENV_INFO.get("note") else "")
+        if not s.live:
+            log.warning("Simulated data. To use real data put DATA_MODE=live in the .env file next to README.md and restart.")
+            return
+        ng = self.sources.get("NG", {})
+        log.warning("NG sources: prices=%s cot=%s storage=%s", ng.get("prices"), ng.get("cot"), ng.get("inventory"))
+        for k, v in (ng.get("errors") or {}).items():
+            log.warning("NG %s fell back to SIM because: %s", k, v)
 
     # ------------------------------------------------------------------ live feed (background thread)
     def _session_from_bars(self, sym: str, df: pd.DataFrame) -> tuple[list, dict] | None:

@@ -145,7 +145,7 @@ def yahoo_chart(ticker: str, interval: str, p1: int | None = None, p2: int | Non
         params["range"] = rng
     else:
         params["period1"], params["period2"] = str(p1), str(p2)
-    r = httpx.get(YAHOO_CHART.format(symbol=ticker), params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=25)
+    r = httpx.get(YAHOO_CHART.format(symbol=ticker), params=params, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}, timeout=25)
     r.raise_for_status()
     res = r.json()["chart"]["result"][0]
     ts = res.get("timestamp") or []
