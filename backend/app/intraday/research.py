@@ -49,7 +49,8 @@ def prepare_sessions(df: pd.DataFrame, symbol: str, lookback_sigma: int = 14) ->
     abs_moves: list[np.ndarray] = []
     n_rth = c_s - o_s
     for day, g in rth.groupby(rth.index.normalize()):
-        if len(g) < n_rth * 0.6:
+        res = int(g["res"].median()) if "res" in g else 1        # bar size: 1-minute, or 5-minute for older live days
+        if len(g) < (n_rth / max(res, 1)) * 0.6:
             continue
         m = (g.index.hour * 60 + g.index.minute - o_s).to_numpy()
         o, h, l, cl, v = (g[k].to_numpy(float) for k in ("open", "high", "low", "close", "volume"))
@@ -188,7 +189,9 @@ def research(md, symbol: str, commission: float = 2.5, slip_ticks: float = 1.0, 
         "rth": cal.session_window(c.sector, sym), "strategies": results, "t_crit": round(t_crit, 2),
         "note": ("SIMULATED intraday data: steps are independent by construction, so no strategy can have a real "
                  "edge here. These numbers show the method and the cost drag. Load real 1-minute bars to measure real edges.")
-        if src == "SIM" else "Real intraday data loaded from CSV.",
+        if src == "SIM" else ("Real delayed bars from Yahoo: 1-minute for the last 30 days, 5-minute before that. "
+                              "The store grows each day the terminal runs; for years of history import a CSV." if src.startswith("YAHOO")
+                              else "Real intraday data loaded from CSV."),
     }
     _CACHE[symbol] = (time.time(), out)
     return out

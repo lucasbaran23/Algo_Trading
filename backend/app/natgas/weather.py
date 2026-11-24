@@ -52,8 +52,15 @@ def _fetch(url: str, params: dict) -> list[pd.Series]:
     import httpx
     p = {"latitude": ",".join(str(c[1]) for c in CITIES), "longitude": ",".join(str(c[2]) for c in CITIES),
          "daily": "temperature_2m_mean", "temperature_unit": "fahrenheit", "timezone": "America/New_York", **params}
-    r = httpx.get(url, params=p, timeout=30)
-    r.raise_for_status()
+    for attempt in range(3):                                    # Open-Meteo occasionally resets connections
+        try:
+            r = httpx.get(url, params=p, timeout=40)
+            r.raise_for_status()
+            break
+        except Exception:  # noqa: BLE001
+            if attempt == 2:
+                raise
+            time.sleep(2 * (attempt + 1))
     data = r.json()
     data = data if isinstance(data, list) else [data]
     return [pd.Series(d["daily"]["temperature_2m_mean"], index=pd.to_datetime(d["daily"]["time"]), dtype=float) for d in data]
@@ -104,7 +111,9 @@ def normals(obs: pd.Series, years: int = 10) -> pd.Series:
 def weather(md, settings) -> dict:
     key = f"{settings.data_mode}:{date.today()}"
     hit = _CACHE.get("w")
-    if hit and hit[1].get("_key") == key and time.time() - hit[0] < 3 * 3600:
+    # a live result is reused for 3 h; a simulated fallback in live mode only for 5 min, then retried
+    ttl = 300 if (settings.live and hit and hit[1].get("source") == "SIM") else 3 * 3600
+    if hit and hit[1].get("_key") == key and time.time() - hit[0] < ttl:
         return hit[1]
     src = "SIM"
     obs = fc = None

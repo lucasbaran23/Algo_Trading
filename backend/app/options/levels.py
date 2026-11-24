@@ -324,6 +324,8 @@ def quick_levels(md, symbol: str) -> dict | None:
     try:
         p = playbook(md, symbol)
         out = {k: p[k] for k in ("regime", "call_wall", "put_wall", "flip", "max_pain", "sd_day", "source")}
+        if md.settings.live and p["source"] == "SIM":
+            out = None                                   # never trade live on a synthetic option chain
     except Exception:  # noqa: BLE001
         out = None
     _PB[symbol] = (time.time(), out)

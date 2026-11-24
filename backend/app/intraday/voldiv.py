@@ -182,7 +182,8 @@ def level_history(md, sym: str, sessions: list[dict]) -> dict:
     out, prev = {}, None
     opt = None
     from ..options import chains
-    if sym in chains.SUPPORTED:
+    has_csv = (chains.DATA_DIR / f"{sym}_levels.csv").exists()
+    if sym in chains.SUPPORTED and (has_csv or not md.settings.live):   # live: only real option levels
         try:
             from ..options import levels as olv
             opt, _ = _opt_hist(md, sym, [s["date"] for s in sessions], olv)
@@ -329,7 +330,7 @@ def today(md, symbol: str, tf: int = 5, k: float = 1.5, on: str | None = None) -
         lv = lv[lv["date"] <= pd.Timestamp(on)]
     levels = {"prev_close": pc, "prev_high": float(lv["high"].iloc[-2]), "prev_low": float(lv["low"].iloc[-2])}
     from ..options import chains
-    if sym in chains.SUPPORTED and on:
+    if sym in chains.SUPPORTED and on and ((chains.DATA_DIR / f"{sym}_levels.csv").exists() or not md.settings.live):
         try:
             from ..options import levels as olv
             hist, _ = olv.history(md, sym, [pd.Timestamp(on).date()])

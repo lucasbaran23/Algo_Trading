@@ -117,6 +117,39 @@ def fetch_eia_series(c: Contract, api_key: str, cache_dir: Path) -> pd.DataFrame
     return df
 
 
+EIA_NGS_HISTORY_URL = "https://ir.eia.gov/ngs/ngshistory.xls"     # keyless: full weekly storage history by region
+EIA_NGS_REPORT_URL = "https://ir.eia.gov/ngs/wngsr.json"         # keyless: the latest Weekly Natural Gas Storage Report
+NGS_REGIONS = ["east", "midwest", "mountain", "pacific", "south_central", "salt", "nonsalt", "total"]
+
+
+def fetch_ng_storage(cache_dir: Path) -> pd.DataFrame:
+    """Lower-48 working gas in storage (Bcf), weekly, with regions. No API key needed."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_dir / "eia_ngshistory.xls"
+    if not path.exists() or time.time() - path.stat().st_mtime > 6 * 3600:
+        r = httpx.get(EIA_NGS_HISTORY_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=40, follow_redirects=True)
+        r.raise_for_status()
+        path.write_bytes(r.content)
+    raw = pd.read_excel(path, sheet_name=0, header=None)
+    rows = raw[pd.to_datetime(raw[0], errors="coerce", format="mixed").notna()].copy()
+    df = pd.DataFrame({"date": pd.to_datetime(rows[0]).to_numpy()})
+    for i, name in enumerate(NGS_REGIONS):
+        df[name] = pd.to_numeric(rows[2 + i], errors="coerce").to_numpy()
+    df = df.dropna(subset=["total"]).sort_values("date").drop_duplicates("date").reset_index(drop=True)
+    df["stocks"] = df["total"]
+    df["week"] = df["date"].dt.isocalendar().week.astype(int)
+    return df
+
+
+def fetch_ng_storage_report(cache_dir: Path) -> dict:
+    """The latest EIA weekly storage report: release date, week, net change, vs year ago and 5-year average."""
+    def _fetch():
+        r = httpx.get(EIA_NGS_REPORT_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=20, follow_redirects=True)
+        r.raise_for_status()
+        return json.loads(r.content.decode("utf-8-sig"))
+    return _cached_json(cache_dir, "eia_wngsr", 1800, _fetch)
+
+
 def fetch_yahoo_daily(c: Contract, cache_dir: Path, rng: str = "10y") -> pd.DataFrame:
     def _fetch():
         r = httpx.get(
@@ -133,7 +166,9 @@ def fetch_yahoo_daily(c: Contract, cache_dir: Path, rng: str = "10y") -> pd.Data
     q = res["indicators"]["quote"][0]
     df = pd.DataFrame(
         {
-            "date": pd.to_datetime(res["timestamp"], unit="s").normalize(),
+            # Globex trade date: a bar stamped after 18:00 ET belongs to the next day's session
+            "date": (pd.to_datetime(res["timestamp"], unit="s", utc=True).tz_convert("America/New_York").tz_localize(None)
+                     + pd.Timedelta(hours=6)).normalize(),
             "open": q["open"],
             "high": q["high"],
             "low": q["low"],
@@ -141,7 +176,9 @@ def fetch_yahoo_daily(c: Contract, cache_dir: Path, rng: str = "10y") -> pd.Data
             "volume": q["volume"],
         }
     ).dropna()
-    df["second"] = float("nan")  # curve data needs a real futures feed
+    df = df[(df["close"] > 0) & (df["low"] > 0)]            # e.g. CL's negative print in April 2020 breaks log returns
+    df = df.drop_duplicates("date", keep="last")
+    df["second"] = float("nan")  # filled from the contract strip where available (see curve.py)
     return df.reset_index(drop=True)
 
 

@@ -265,9 +265,15 @@ async def snapshot(symbol: str):
 
 
 @app.get("/api/history/{symbol}")
-async def history(symbol: str, days: int = 260):
+async def history(symbol: str, days: int = 260, adjusted: bool = False):
+    """Daily bars. NG in live mode is back-adjusted internally for analytics; charts get the actual
+    traded prices (with the roll gaps) unless adjusted=true."""
     sym = universe.get(_sym(symbol)).data_symbol
     df = hub.md.daily[sym].tail(days).copy()
+    if not adjusted and "raw_close" in df:
+        f = df["raw_close"] / df["close"]
+        for col in ("open", "high", "low", "close"):
+            df[col] = df[col] * f
     ses = hub.md.sessions[sym]
     df.loc[df.index[-1], ["close"]] = ses.last
     df.loc[df.index[-1], "high"] = max(df["high"].iloc[-1], ses.high)
@@ -463,7 +469,83 @@ def natgas_contracts():
         nxt.append({"code": ngc.code(y, m), "month": ngc.MONTH_NAMES[m - 1], "year": y,
                     "last_trade": ngc.last_trade_date(y, m).isoformat()})
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-    return {"session": day.isoformat(), "info": ngc.contract_info(day), "strip": nxt}
+    from .natgas import curve
+    return {"session": day.isoformat(), "info": ngc.contract_info(day), "strip": nxt,
+            "curve": curve.strip(hub.md, 18, day), "rolls": hub.md.rolls.get("NG", [])[-6:]}
+
+
+@app.get("/api/datastatus/{symbol}")
+def data_status(symbol: str = "NG"):
+    """Where every number on the NG screens comes from right now, and how fresh it is."""
+    import time as _t
+    from .data import intraday as idm
+    from .natgas import curve, weather as wx
+    sym = universe.get(_sym(symbol)).data_symbol
+    md = hub.md
+    src = md.sources.get(sym, {})
+    rows = []
+    d = md.daily[sym]
+    feed = md.feed_status.get(sym, {})
+    rows.append({"what": "Daily prices", "source": "Yahoo NG=F (delayed)" if src.get("prices") == "LIVE" else "Simulator",
+                 "status": src.get("prices", "SIM"), "detail": f"{len(d)} sessions {d['date'].iloc[0].date()} → {d['date'].iloc[-1].date()}"
+                 + (f" · {src['adjusted']}" if src.get("adjusted") else "")})
+    rows.append({"what": "Live price & session bars", "source": "Yahoo 1-minute (≈10-min delay), polled every 30 s" if md.settings.live else "Tick simulator",
+                 "status": ("LIVE" if feed.get("ok") else "ERROR") if md.settings.live else "SIM",
+                 "detail": (f"last bar {feed.get('bar_time')} ET · polled {int(_t.time() - feed['at'])} s ago" if feed.get("ok") else feed.get("error", "waiting for first poll"))
+                 if md.settings.live else "synthetic ticks"})
+    try:
+        bars, bsrc = idm.bars(md, sym)
+        res = bars["res"].value_counts().to_dict() if "res" in bars else {}
+        rows.append({"what": "Intraday history", "source": bsrc, "status": "SIM" if bsrc == "SIM" else "LIVE",
+                     "detail": f"{bars['session'].nunique()} sessions · {res.get(1, 0):,} one-minute + {res.get(5, 0):,} five-minute bars · {bars.index[0].date()} → {bars.index[-1].date()}"})
+    except Exception as exc:  # noqa: BLE001
+        rows.append({"what": "Intraday history", "source": "—", "status": "ERROR", "detail": str(exc)[:120]})
+    if sym == "NG":
+        cv = curve.strip(md, 18)
+        rows.append({"what": "Futures curve", "source": cv["source"], "status": "LIVE" if cv["source"].startswith("LIVE") else "SIM",
+                     "detail": f"{sum(1 for r in cv['contracts'] if r['last'])} contracts · front {cv['summary']['front']}"})
+        inv = md.inventory.get("NG")
+        rows.append({"what": "Storage (EIA weekly)", "source": "EIA ir.eia.gov (no key)" if src.get("inventory") == "LIVE" else "Simulator",
+                     "status": src.get("inventory", "SIM"), "detail": f"week ending {inv['date'].iloc[-1].date()} · {inv['stocks'].iloc[-1]:,.0f} Bcf" if inv is not None else ""})
+        w = wx.weather(md, md.settings)
+        rows.append({"what": "Weather (HDD)", "source": w["source"], "status": "LIVE" if w["source"].startswith("LIVE") else "SIM",
+                     "detail": f"{len(w['cities'])} cities, 10-yr normals, 16-day forecast"})
+    cot = md.cot.get(sym)
+    rows.append({"what": "COT positioning", "source": "CFTC disaggregated (weekly)" if src.get("cot") == "LIVE" else "Simulator",
+                 "status": src.get("cot", "SIM"), "detail": f"as of {cot['date'].iloc[-1].date()}" if cot is not None else ""})
+    ns = hub.news.status() if hasattr(hub.news, "status") else {}
+    rows.append({"what": "News", "source": "Google News + Yahoo Finance RSS" if md.settings.live else "Simulated headlines",
+                 "status": "LIVE" if md.settings.live else "SIM", "detail": f"{ns.get('items', '?')} items" + (f" · {len(ns.get('errors', []))} feed errors" if ns.get("errors") else "")})
+    if sym in ("NG", "ES", "NQ", "CL", "GC"):
+        from .options import chains
+        has = (chains.DATA_DIR / f"{sym}_chain.csv").exists()
+        rows.append({"what": "Options chain", "source": "Your CSV" if has else "Simulated (no free NG options feed)",
+                     "status": "LIVE" if has else "SIM",
+                     "detail": "used everywhere" if has else "shown for illustration; excluded from live signals and the level ladder in live mode"})
+    return {"symbol": sym, "mode": md.settings.data_mode, "rows": rows}
+
+
+@app.get("/api/natgas/storage")
+def natgas_storage():
+    """EIA weekly storage: the latest report (regions, vs year ago and 5-year) plus the full history."""
+    from .data import live
+    from .signals import fundamental
+    inv = hub.md.inventory.get("NG")
+    out = {"source": hub.md.sources.get("NG", {}).get("inventory", "SIM"), "report": None}
+    if inv is not None and len(inv):
+        out["sd"] = _clean({k: v for k, v in fundamental.supply_demand_signals(inv).items()})
+        regions = [r for r in ("east", "midwest", "mountain", "pacific", "south_central") if r in inv]
+        out["regions_hist"] = [{"date": str(r.date.date()), **{k: float(getattr(r, k)) for k in regions}} for r in inv.tail(260).itertuples()] if regions else []
+    if hub.md.settings.live:
+        try:
+            rep = live.fetch_ng_storage_report(hub.md.settings.cache_dir)
+            out["report"] = {"release_date": rep["release_date"][:11], "week": rep["current_week"],
+                             "series": [{"name": x["name"], "now": x["data"][0][1], "week_ago": x["data"][1][1], "year_ago": x["data"][2][1],
+                                         **{k: x["calculated"].get(k) for k in ("net_change", "implied_flow", "5yr-avg", "pct-change_yrago", "pct-chg_5yr-avg")}}
+                                        for x in rep["series"]]}
+        except Exception as exc:  # noqa: BLE001
+            out["report_error"] = str(exc)[:160]
+    return out
 
 
 # ---------------------------------------------------------------------- trade signals

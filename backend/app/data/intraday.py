@@ -132,24 +132,127 @@ def _load_csv(path: Path) -> pd.DataFrame:
     return out
 
 
+# ---------------------------------------------------------------------- live intraday (Yahoo, delayed)
+YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+LIVE_SRC = "YAHOO (delayed)"
+
+
+def yahoo_chart(ticker: str, interval: str, p1: int | None = None, p2: int | None = None, rng: str | None = None) -> pd.DataFrame:
+    """Yahoo chart bars as a DataFrame indexed by bar-CLOSE time in naive America/New_York."""
+    import httpx
+    params = {"interval": interval, "includePrePost": "true"}
+    if rng:
+        params["range"] = rng
+    else:
+        params["period1"], params["period2"] = str(p1), str(p2)
+    r = httpx.get(YAHOO_CHART.format(symbol=ticker), params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=25)
+    r.raise_for_status()
+    res = r.json()["chart"]["result"][0]
+    ts = res.get("timestamp") or []
+    if not ts:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    q = res["indicators"]["quote"][0]
+    mins = int(interval.rstrip("m")) if interval.endswith("m") else 60
+    idx = (pd.to_datetime(ts, unit="s", utc=True).tz_convert("America/New_York").tz_localize(None)
+           + pd.Timedelta(minutes=mins))                                     # Yahoo stamps the bar open
+    df = pd.DataFrame({k: pd.to_numeric(pd.Series(q.get(k)), errors="coerce").to_numpy() for k in ("open", "high", "low", "close", "volume")},
+                      index=pd.DatetimeIndex(idx, name="ts"))
+    df = df.dropna(subset=["close"])
+    df["volume"] = df["volume"].fillna(0.0)
+    df["res"] = mins
+    return df[~df.index.duplicated(keep="last")]
+
+
+def _store_path(md, sym: str) -> Path:
+    return Path(md.settings.cache_dir) / "intraday" / f"{sym}_bars.csv.gz"
+
+
+def live_history(md, sym: str, max_age_s: int = 600) -> pd.DataFrame:
+    """Real intraday history that grows over time.
+
+    Each refresh pulls 1-minute bars for the last 30 days (Yahoo's limit) and 5-minute bars for the
+    last 60 days, and merges them into a store on disk. 1-minute bars win wherever both exist, and
+    days already stored are kept, so the history keeps lengthening the longer the terminal runs.
+    """
+    import time as _t
+    c = universe.get(sym)
+    path = _store_path(md, sym)
+    old = None
+    if path.exists():
+        old = pd.read_csv(path, index_col="ts", parse_dates=["ts"])
+        if _t.time() - path.stat().st_mtime < max_age_s:
+            return old
+    now = int(_t.time())
+    parts = []
+    for k in range(4, 0, -1):                                   # 4 x 7-day chunks of 1-minute bars
+        p1 = now - min(k * 7, 29) * 86400 + 60
+        p2 = now - (k - 1) * 7 * 86400
+        try:
+            parts.append(yahoo_chart(c.yahoo, "1m", p1, p2))
+        except Exception:  # noqa: BLE001
+            pass
+    one = pd.concat(parts) if parts else pd.DataFrame()
+    five = pd.DataFrame()
+    try:
+        five = yahoo_chart(c.yahoo, "5m", now - 59 * 86400, now)
+    except Exception:  # noqa: BLE001
+        pass
+    frames = [f for f in (old, one) if f is not None and len(f)]
+    fine = pd.concat(frames) if frames else pd.DataFrame(columns=["open", "high", "low", "close", "volume", "res"])
+    fine = fine[~fine.index.duplicated(keep="last")]
+    if len(five):
+        fine_days = set((fine.index + pd.Timedelta(hours=6)).normalize()) if len(fine) else set()
+        five_days = (five.index + pd.Timedelta(hours=6)).normalize()
+        five = five[~five_days.isin(list(fine_days))]
+    out = pd.concat([fine, five]).sort_index()
+    out = out[~out.index.duplicated(keep="first")]
+    if out.empty:
+        raise ValueError(f"no Yahoo intraday bars for {sym}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(path, compression="gzip")
+    return out
+
+
 def bars(md, symbol: str, sessions: int = 250) -> tuple[pd.DataFrame, str]:
-    """1-minute bars for a market and their source ('CSV' or 'SIM')."""
+    """Intraday bars for a market and their source: 'CSV' (your file), 'YAHOO (delayed)' (live mode) or 'SIM'.
+
+    Bars are 1-minute where available; older live days may be 5-minute (column `res`)."""
+    import time as _t
     c = universe.get(symbol)
     sym = c.data_symbol
     path = DATA_DIR / f"{sym}_1m.csv"
-    key = f"{sym}:{sessions}:{len(md.daily[sym])}:{path.exists()}"
+    live = bool(getattr(md.settings, "live", False)) and bool(c.yahoo) and not path.exists()
+    key = f"{sym}:{sessions}:{len(md.daily[sym])}:{path.exists()}:{live}"
     hit = _CACHE.get(sym)
-    if hit and hit[0] == key:
-        return hit[1], ("CSV" if path.exists() else "SIM")
+    if hit and hit[0] == key and (not live or _t.time() - hit[3] < 600):
+        return hit[1], hit[2]
+    src = "SIM"
+    df = None
     if path.exists():
         df = _load_csv(path)
-        df = df[df["session"].isin(sorted(df["session"].unique())[-sessions:])]
         src = "CSV"
+    elif live:
+        try:
+            df = live_history(md, sym)
+            src = LIVE_SRC
+        except Exception:  # noqa: BLE001
+            df = None
+    if df is not None:
+        df = df.copy()
+        df["session"] = (df.index + pd.Timedelta(hours=6)).normalize()
+        df = df[df.index.dayofweek < 6]
+        df = df[df["session"].isin(sorted(df["session"].unique())[-sessions:])]
+        if "res" not in df:
+            df["res"] = 1
     else:
         df = _simulate(sym, md.daily[sym], md.settings.sim_seed, sessions)
-        src = "SIM"
-    _CACHE[sym] = (key, df)
+        df["res"] = 1
+    _CACHE[sym] = (key, df, src, _t.time())
     return df, src
+
+
+def is_real(src: str) -> bool:
+    return src != "SIM"
 
 
 def resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:

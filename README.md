@@ -251,6 +251,26 @@ Options levels also feed the Insider's level ladder and game plan.
 * ES/NQ in live mode: CBOE's free delayed SPX/NDX chains, scaled to the futures.
 * Otherwise a labelled simulated chain with the right skew sign: NG winter call skew, index put skew.
 
+## Live data for natural gas (`DATA_MODE=live`)
+
+Set `DATA_MODE=live` in `.env` and restart. No API keys are needed for NG.
+
+| Data | Source | Notes |
+|---|---|---|
+| Daily prices, 10 years | Yahoo `NG=F` | ~10-min delayed. **Back-adjusted at every contract roll**, so the roll gap isn't counted as a move. Charts still show actual traded prices |
+| Live price and session bars | Yahoo 1-minute, polled every 30 s in a background thread | `LIVE_FOCUS=NG` (other markets: last price every 2 min) |
+| Intraday history | Yahoo 1-minute (last 30 days) + 5-minute (last 60 days) | Saved to `backend/.cache/intraday/`. It **grows every day the terminal runs**. For years of history, import a CSV |
+| Futures curve | Yahoo per-contract (`NGF27.NYM`, …), 18 months | M1–M2, winter/summer strips, winter premium, H/J |
+| Storage | EIA weekly report + full history by region (`ir.eia.gov`) | Latest report with regions, vs year ago and vs 5-year |
+| Weather | Open-Meteo archive + 16-day forecast, 12 gas-weighted cities | A forecast snapshot is saved daily; real revision sensitivity kicks in after ~60 days |
+| COT | CFTC disaggregated | Weekly |
+| News | Google News + Yahoo Finance RSS | |
+| Options | **No free source** | Shown simulated and labelled. In live mode, synthetic option levels are excluded from trade signals, the level ladder and the vol-divergence levels. Load a real chain CSV to use them |
+
+**DATA SOURCES panel.** The Nat Gas Desk opens with this panel. It shows every feed, its status (LIVE, SIM or ERROR) and how fresh it is.
+
+**Before selling the product.** Yahoo data is unofficial and not licensed for redistribution. Swap in a licensed CME feed (e.g. Databento) first, and check Open-Meteo's commercial terms.
+
 ## Levels & σ-fade (`LX`)
 
 ![Options levels](docs/screenshots/34-options-levels-ng.png)

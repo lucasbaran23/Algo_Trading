@@ -46,8 +46,9 @@ def _snap_path(settings) -> Path:
 
 
 def record_snapshot(settings, w: dict) -> dict:
-    """Store today's forecast (date -> HDD by target date). Returns all snapshots."""
-    p = _snap_path(settings)
+    """Store today's forecast (date -> HDD by target date). Returns all snapshots.
+    Only real forecasts are stored; in SIM mode a separate file is used so the two never mix."""
+    p = _snap_path(settings) if w["source"] != "SIM" else _snap_path(settings).with_name("ng_forecast_snapshots_sim.json")
     try:
         snaps = json.loads(p.read_text())
     except Exception:  # noqa: BLE001

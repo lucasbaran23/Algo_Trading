@@ -92,9 +92,17 @@ def fetch_live(symbols: list[str], yahoo_map: dict[str, str], extra_feeds: list[
     with httpx.Client(headers=_HEADERS, timeout=10, follow_redirects=True) as client:
         for url, hint in urls:
             try:
-                r = client.get(url)
+                for attempt in range(2):                 # Google throttles bursts: pace and retry once
+                    if hint == "Google News":
+                        time.sleep(0.5 + 2.0 * attempt)
+                    r = client.get(url)
+                    if r.status_code in (429, 500, 502, 503) and attempt == 0:
+                        continue
+                    break
                 r.raise_for_status()
                 items += parse_rss(r.text, hint)
+            except httpx.HTTPStatusError as exc:
+                errors.append(f"{hint}: HTTP {exc.response.status_code}")
             except Exception as exc:  # noqa: BLE001 - one bad feed must not stop the rest
                 errors.append(f"{hint}: {type(exc).__name__}")
     return items, errors

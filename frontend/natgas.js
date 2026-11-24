@@ -64,6 +64,68 @@ function ngWeather() {
       <span>Cities</span><span class="muted">${w.cities.length} demand-weighted (${w.cities.slice(0, 4).join(", ")}…)</span></div></div>`;
 }
 
+function ngCurve() {
+  const cv = NGD.k?.curve;
+  if (!cv) return "";
+  const rows = cv.contracts.filter((r) => r.last != null), sm = cv.summary;
+  if (!rows.length) return "";
+  const W = 620, H = 200, padL = 40, padB = 34, bw = (W - padL - 8) / rows.length;
+  const lo = Math.min(...rows.map((r) => r.last)) * 0.95, hi = Math.max(...rows.map((r) => r.last)) * 1.03;
+  const y = (v) => 8 + (1 - (v - lo) / (hi - lo)) * (H - padB - 8);
+  const bars = rows.map((r, i) => `<rect x="${padL + i * bw + 2}" y="${y(r.last)}" width="${bw - 4}" height="${H - padB - y(r.last)}" rx="2"
+      style="fill:${r.winter ? "var(--s3)" : "var(--s1)"};opacity:${i === 0 ? 1 : 0.8}"><title>${r.code} ${r.label}: ${px("NG", r.last)} (${signed(r.chg, 3)}) · LTD ${r.last_trade}</title></rect>
+    <text x="${padL + i * bw + bw / 2}" y="${y(r.last) - 3}" font-size="9" text-anchor="middle" style="fill:var(--ink-2)">${fx(r.last, 2)}</text>
+    <text x="${padL + i * bw + bw / 2}" y="${H - padB + 12}" font-size="9" text-anchor="middle" style="fill:var(--muted)">${r.label.split(" ")[0]}</text>
+    ${i === 0 || r.month === 1 ? `<text x="${padL + i * bw + bw / 2}" y="${H - padB + 24}" font-size="9" text-anchor="middle" style="fill:var(--muted)">'${r.label.split(" ")[1]}</text>` : ""}`).join("");
+  const live = cv.source.startsWith("LIVE");
+  return `<div class="box"><div class="sec">FUTURES CURVE <span class="muted">${esc(cv.source)}${live ? "" : " · synthetic shape"}</span></div>
+    <div class="tiles">${tile("M1–M2", `${signed(sm.m1_m2, 3)} (${signed(sm.m1_m2_pct, 1)}%)`, sm.m1_m2 > 0 ? "" : "up")}${tile("Front shape", sm.shape || "—")}
+      ${tile("Winter strip", px("NG", sm.winter_strip))}${tile("Summer strip", px("NG", sm.summer_strip))}
+      ${tile("Winter premium", signed(sm.winter_premium, 3))}${tile(sm.h_j_codes ? `H/J ${sm.h_j_codes.map((c) => c.slice(2)).join("/")}` : "H/J", signed(sm.h_j, 3), sm.h_j > 0.3 ? "up" : "")}</div>
+    <svg viewBox="0 0 ${W} ${H}" class="opt-svg" role="img" aria-label="Natural gas futures prices by contract month">${bars}
+      <text x="4" y="${y(hi / 1.03) + 4}" font-size="9" style="fill:var(--muted)">${fx(hi / 1.03, 2)}</text><text x="4" y="${H - padB}" font-size="9" style="fill:var(--muted)">${fx(lo / 0.95, 2)}</text></svg>
+    <div class="legend"><span><i style="background:var(--s3)"></i>Winter (Dec–Mar)</span><span><i style="background:var(--s1)"></i>Other months</span></div>
+    <div class="muted">Contango at the front (M2 above M1) = comfortable supply; backwardation = a tight prompt market. A wide H/J (March over April) = the market fears low end-of-winter storage.
+      ${NGD.k.rolls?.length ? `Continuous NG=F history is back-adjusted at each roll (latest: ${NGD.k.rolls[NGD.k.rolls.length - 1].date}, ${NGD.k.rolls[NGD.k.rolls.length - 1].expiring} → next, gap ${signed(100 * NGD.k.rolls[NGD.k.rolls.length - 1].gap, 1)}%).` : ""}</div></div>`;
+}
+
+function ngStorageReport() {
+  const st = NGD.st;
+  if (!st) return "";
+  const rep = st.report, h = st.sd?.history || [];
+  let chart = "";
+  if (h.length) {
+    const W = 620, H = 170, padL = 44, vals = h.flatMap((r) => [r.stocks, r.norm].filter((v) => v != null));
+    const lo = Math.min(...vals) * 0.95, hi = Math.max(...vals) * 1.02;
+    const x = (i) => padL + (i / (h.length - 1)) * (W - padL - 8), y = (v) => 8 + (1 - (v - lo) / (hi - lo)) * (H - 28);
+    const line = (k, col, dash) => `<polyline fill="none" stroke-width="2" ${dash ? 'stroke-dasharray="4 3"' : ""} style="stroke:${col}" points="${h.map((r, i) => r[k] == null ? null : `${x(i)},${y(r[k])}`).filter(Boolean).join(" ")}"/>`;
+    chart = `<svg viewBox="0 0 ${W} ${H}" class="opt-svg" role="img" aria-label="Working gas in storage vs the 5-year average, last two years">
+      ${line("norm", "var(--warn)", true)}${line("stocks", "var(--s1)")}
+      <text x="4" y="${y(hi / 1.02) + 4}" font-size="9" style="fill:var(--muted)">${fx(hi / 1.02, 0)}</text><text x="4" y="${y(lo / 0.95)}" font-size="9" style="fill:var(--muted)">${fx(lo / 0.95, 0)}</text>
+      <text x="${padL}" y="${H - 4}" font-size="9" style="fill:var(--muted)">${h[0].date}</text><text x="${W - 8}" y="${H - 4}" font-size="9" text-anchor="end" style="fill:var(--muted)">${h[h.length - 1].date}</text></svg>
+      <div class="legend"><span><i style="background:var(--s1)"></i>Working gas (Bcf)</span><span><i style="background:var(--warn)"></i>5-year average, same week</span></div>`;
+  }
+  return `<div class="box"><div class="sec">EIA STORAGE REPORT <span class="muted">${st.source === "LIVE" ? `EIA · ${rep ? `released ${rep.release_date} · week ending ${rep.week}` : ""}` : "SIM"}</span></div>
+    ${rep ? `<table class="tbl"><thead><tr><th>REGION</th><th>BCF</th><th>NET CHANGE</th><th>VS YEAR AGO</th><th>VS 5-YR</th></tr></thead><tbody>
+      ${rep.series.map((r) => `<tr><td class="sym">${esc(r.name.replace(" region", ""))}</td><td>${fx(r.now, 0)}</td><td class="${cls(r.net_change)}">${signed(r.net_change, 0)}</td>
+        <td class="${cls(-r["pct-change_yrago"])}">${signed(r["pct-change_yrago"], 1)}%</td><td class="${cls(-r["pct-chg_5yr-avg"])}">${signed(r["pct-chg_5yr-avg"], 1)}%</td></tr>`).join("")}
+      </tbody></table>` : ""}
+    ${chart}
+    <div class="muted">Released Thursdays 10:30 ET (Wednesday in Thanksgiving week). Green = below normal (bullish for price), red = above.</div></div>`;
+}
+
+function ngDataStatus() {
+  const ds = NGD.ds;
+  if (!ds) return "";
+  const col = { LIVE: "live", SIM: "sim", ERROR: "bad", NA: "sim" };
+  return `<details class="box ng-ds" ${ds.rows.some((r) => r.status !== "LIVE") ? "" : ""}><summary class="sec">DATA SOURCES <span class="muted">mode ${ds.mode.toUpperCase()} ·
+      ${ds.rows.filter((r) => r.status === "LIVE").length}/${ds.rows.length} live${ds.rows.some((r) => r.status === "ERROR") ? ' · <span class="down">errors</span>' : ""} · click to expand</span></summary>
+    <table class="tbl"><thead><tr><th>DATA</th><th>STATUS</th><th>SOURCE</th><th>DETAIL</th></tr></thead><tbody>
+    ${ds.rows.map((r) => `<tr><td class="sym">${esc(r.what)}</td><td><span class="badge ${col[r.status] || "sim"}">${r.status}</span></td><td>${esc(r.source)}</td><td class="muted">${esc(r.detail || "")}</td></tr>`).join("")}
+    </tbody></table>
+    ${ds.mode === "sim" ? '<div class="notice">Running on simulated data. Set DATA_MODE=live in .env to use real prices, curve, EIA storage, weather, COT and news.</div>' : ""}</details>`;
+}
+
 function ngStorage() {
   const sd = NGD.ins?.supply_demand;
   if (!sd) return "";
@@ -193,8 +255,10 @@ function ngOptions() {
 
 // ------------------------------------------------------------------ view
 async function ngLoad() {
-  [NGD.o, NGD.s, NGD.w, NGD.k, NGD.ins, NGD.dyn, NGD.opt] = await Promise.all([api("/api/natgas/outlook"), api("/api/natgas/seasonality"),
-    api("/api/natgas/weather"), api("/api/natgas/contracts"), api("/api/snapshot/NG"), api("/api/natgas/dynamics"), api("/api/options/NG")]);
+  [NGD.o, NGD.s, NGD.w, NGD.k, NGD.ins, NGD.dyn, NGD.opt, NGD.st] = await Promise.all([api("/api/natgas/outlook"), api("/api/natgas/seasonality"),
+    api("/api/natgas/weather"), api("/api/natgas/contracts"), api("/api/snapshot/NG"), api("/api/natgas/dynamics"), api("/api/options/NG"),
+    api("/api/natgas/storage").catch(() => null)]);
+  NGD.ds = await api("/api/datastatus/NG").catch(() => null);
 }
 function ngRender() {
   const v = $("#view");
@@ -206,14 +270,17 @@ function ngRender() {
       <div class="dt-badges">${Object.entries(NGD.ins.sources || {}).map(([k, x]) => srcBadge(k.slice(0, 3).toUpperCase(), x)).join(" ")} ${srcBadge("WX", NGD.w.source.startsWith("LIVE") ? "LIVE" : "SIM")}
         <span class="bias ${biasCls(NGD.ins.swing.bias)}">SWING ${NGD.ins.swing.bias}</span><span class="bias ${biasCls(NGD.ins.day.bias)}">DAY ${NGD.ins.day.bias}</span>
         <button class="tbtn" data-ngjump="DT">INSIDER ›</button><button class="tbtn" data-ngjump="OPT">OPTIONS ›</button><button class="tbtn" data-ngjump="TS">SIGNALS ›</button><button class="tbtn" data-ngjump="IR">RESEARCH ›</button></div></div>
+    ${ngDataStatus()}
     <div class="dt-row ng-r1">${ngOutlook()}<div class="ng-col">${ngContracts()}${ngOptions()}${ngStorage()}</div></div>
+    <div class="dt-row dt-r2b">${ngCurve()}${ngStorageReport()}</div>
     ${ngDynamics()}
     <div class="dt-row dt-r2b">${ngWeather()}${ngExpiry()}</div>
     ${ngSeasonHeat()}
     <div class="dt-row dt-r2b">${ngAnalogs()}${ngWeatherLink()}</div>
     <div class="dt-row dt-r2b">${ngWeekday()}${ngProfile()}</div>
-    <div class="box muted">Data: ${NGD.s.sessions} sessions of front-month history (${NGD.s.years}, source ${NGD.s.source}). With DATA_MODE=live this uses the continuous NG=F series (about 10 years) and Open-Meteo weather.
-      For contract-by-contract history (e.g. December contracts only), load per-contract daily data from a vendor. Seasonal tendencies describe the past; size by today's volatility.</div></div>`;
+    <div class="box muted">Data: ${NGD.s.sessions} sessions of front-month history (${NGD.s.years}, source ${NGD.s.source}).
+      ${NGD.s.source === "LIVE" ? "Continuous NG=F from Yahoo (delayed), back-adjusted at each contract roll so the roll gap doesn't count as a move. Weather: Open-Meteo. Storage: EIA." : "Simulated. Set DATA_MODE=live for Yahoo prices, EIA storage and Open-Meteo weather."}
+      Contract-by-contract history (e.g. December contracts only) needs a vendor feed. Seasonal tendencies describe the past; size by today's volatility.</div></div>`;
   v.scrollTop = keep;
 }
 

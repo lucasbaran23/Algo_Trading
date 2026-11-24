@@ -116,6 +116,8 @@ def build(hub, symbol: str) -> dict:
         if sym in och.SUPPORTED:
             ch, meta = och.load(md, sym)
             opt = oa.analyse(ch, meta)
+            if md.settings.live and meta["source"] == "SIM":
+                raise LookupError("synthetic chain: don't put made-up option levels on a live ladder")
             for k, name in (("call_wall", "Options call wall"), ("put_wall", "Options put wall"), ("flip", "Gamma flip")):
                 if opt.get(k):
                     raw_levels.append((opt[k], name, "options"))

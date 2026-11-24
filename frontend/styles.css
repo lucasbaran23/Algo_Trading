@@ -412,3 +412,7 @@ label.opt { display: flex; gap: 4px; align-items: center; color: var(--ink-2); c
 .gs-ctl input, .gs-ctl select { background: var(--surface-3); border: 1px solid var(--line); color: var(--ink); padding: 3px 6px; border-radius: 5px; font-family: var(--font-num); font-size: 12px; }
 .gs-ctl input:focus, .gs-ctl select:focus { outline: none; border-color: var(--accent); }
 .tile b.warn { color: var(--warn); }
+.ng-ds summary { cursor: pointer; list-style: none; }
+.ng-ds .tbl { table-layout: fixed; width: 100%; }
+.ng-ds .tbl th, .ng-ds .tbl td { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.ng-ds .tbl th:nth-child(1) { width: 18%; } .ng-ds .tbl th:nth-child(2) { width: 9%; } .ng-ds .tbl th:nth-child(3) { width: 28%; }
