@@ -47,6 +47,11 @@ GOOGLE_QUERIES = {
 }
 GOOGLE_RSS = "https://news.google.com/rss/search?q={q}+when:1d&hl=en-US&gl=US&ceid=US:en"
 YAHOO_RSS = "https://feeds.finance.yahoo.com/rss/2.0/headline?s={sym}&region=US&lang=en-US"
+# Free, keyless energy feeds (headlines + links). NGI is natural-gas specialist news.
+ENERGY_FEEDS = [("https://www.naturalgasintel.com/feed/", "NGI (Natural Gas Intelligence)", {"NG"}),
+                ("https://www.eia.gov/rss/todayinenergy.xml", "EIA Today in Energy", {"NG", "CL", "RB", "HO"}),
+                ("https://www.rigzone.com/news/rss/rigzone_latest.aspx", "Rigzone", {"NG", "CL"}),
+                ("https://oilprice.com/rss/main", "OilPrice.com", {"NG", "CL"})]
 _HEADERS = {"User-Agent": "Mozilla/5.0 (commodities-terminal news reader)"}
 
 
@@ -88,6 +93,7 @@ def fetch_live(symbols: list[str], yahoo_map: dict[str, str], extra_feeds: list[
             urls.append((GOOGLE_RSS.format(q=quote_plus(GOOGLE_QUERIES[sym])), "Google News"))
         if sym in yahoo_map:
             urls.append((YAHOO_RSS.format(sym=quote_plus(yahoo_map[sym])), "Yahoo Finance"))
+    urls += [(u, name) for u, name, syms in ENERGY_FEEDS if syms & set(symbols)]
     urls += [(u, "RSS") for u in extra_feeds]
     with httpx.Client(headers=_HEADERS, timeout=10, follow_redirects=True) as client:
         for url, hint in urls:

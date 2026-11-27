@@ -127,7 +127,7 @@ def _load_csv(path: Path) -> pd.DataFrame:
     # Globex session date: bars after 18:00 ET belong to the next day's session
     sess = (out.index + pd.Timedelta(hours=6)).normalize()
     out["session"] = sess
-    out = out[out.index.dayofweek < 6]
+    out = out[out["session"].dt.dayofweek < 5]          # Sunday-evening bars belong to Monday's session
     out.index.name = "ts"
     return out
 
@@ -240,7 +240,7 @@ def bars(md, symbol: str, sessions: int = 250) -> tuple[pd.DataFrame, str]:
     if df is not None:
         df = df.copy()
         df["session"] = (df.index + pd.Timedelta(hours=6)).normalize()
-        df = df[df.index.dayofweek < 6]
+        df = df[df["session"].dt.dayofweek < 5]           # keep Sunday-evening bars (Monday session)
         df = df[df["session"].isin(sorted(df["session"].unique())[-sessions:])]
         if "res" not in df:
             df["res"] = 1

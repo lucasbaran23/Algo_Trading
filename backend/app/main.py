@@ -224,6 +224,10 @@ async def lifespan(_app: FastAPI):
     hub.tasks = [asyncio.create_task(hub.tick_loop()), asyncio.create_task(hub.signal_loop()),
                  asyncio.create_task(hub.news_loop())]
     log.info("Terminal up. Data mode=%s, live routing=%s", settings.data_mode, bool(hub.live_broker))
+    if settings.live:
+        import threading
+        from .data import databento
+        threading.Thread(target=databento.auto_backfill, args=(hub.md, "NG"), name="databento-backfill", daemon=True).start()
     yield
     for t in hub.tasks:
         t.cancel()
@@ -482,6 +486,27 @@ def natgas_balance():
     return _clean(balance.balance(hub.md))
 
 
+@app.get("/api/natgas/eia")
+def natgas_eia():
+    """Daily power burn (EIA-930) and Henry Hub spot: needs a free EIA_API_KEY."""
+    from .natgas import balance, eia_api
+    out = {}
+    try:
+        steo_df = balance.steo(hub.md)[0]
+    except Exception:  # noqa: BLE001
+        steo_df = None
+    for k, fn in (("power_burn", lambda: eia_api.power_burn(hub.md.settings, steo_df)), ("henry_hub", lambda: eia_api.henry_hub(hub.md.settings))):
+        try:
+            out[k] = fn()
+        except Exception as exc:  # noqa: BLE001
+            out[k] = {"available": False, "reason": f"{type(exc).__name__}: {str(exc)[:160]}"}
+    hh = out.get("henry_hub", {})
+    if hh.get("available"):
+        fut = float(hub.md.sessions["NG"].last)
+        out["henry_hub"]["basis_vs_front"] = round(hh["last"] - fut, 3)
+    return _clean(out)
+
+
 @app.get("/api/datastatus/{symbol}")
 def data_status(symbol: str = "NG"):
     """Where every number on the NG screens comes from right now, and how fresh it is."""
@@ -522,7 +547,7 @@ def data_status(symbol: str = "NG"):
     rows.append({"what": "COT positioning", "source": "CFTC disaggregated (weekly)" if src.get("cot") == "LIVE" else "Simulator",
                  "status": src.get("cot", "SIM"), "detail": f"as of {cot['date'].iloc[-1].date()}" if cot is not None else ""})
     ns = hub.news.status() if hasattr(hub.news, "status") else {}
-    rows.append({"what": "News", "source": "Google News + Yahoo Finance RSS" if md.settings.live else "Simulated headlines",
+    rows.append({"what": "News", "source": "Google News, Yahoo Finance, NGI, EIA, Rigzone, OilPrice RSS" if md.settings.live else "Simulated headlines",
                  "status": "LIVE" if md.settings.live else "SIM", "detail": f"{ns.get('items', '?')} items" + (f" · {len(ns.get('errors', []))} feed errors" if ns.get("errors") else "")})
     if sym in ("NG", "ES", "NQ", "CL", "GC"):
         from .options import chains
@@ -530,6 +555,18 @@ def data_status(symbol: str = "NG"):
         rows.append({"what": "Options chain", "source": "Your CSV" if has else "Simulated (no free NG options feed)",
                      "status": "LIVE" if has else "SIM",
                      "detail": "used everywhere" if has else "shown for illustration; excluded from live signals and the level ladder in live mode"})
+    if sym == "NG":
+        from .data import databento
+        from .natgas import eia_api
+        has_eia = bool(md.settings.eia_api_key)
+        rows.append({"what": "Daily power burn + Henry Hub spot", "source": "EIA API v2 (EIA-930 grid data)",
+                     "status": "LIVE" if has_eia and md.settings.live else "KEY",
+                     "detail": "configured" if has_eia else f"free key needed: {eia_api.REGISTER} → EIA_API_KEY in .env"})
+        db = databento.status()
+        rows.append({"what": "Years of 1-minute history", "source": "Databento (CME Globex)",
+                     "status": "LIVE" if db["configured"] else "KEY",
+                     "detail": f"configured · spend cap ${db['max_usd']:.0f}/request" if db["configured"]
+                     else f"optional: {db['signup']} → DATABENTO_API_KEY in .env (free credit on signup)"})
     from .config import ENV_INFO
     errs = src.get("errors") or {}
     for r in rows:

@@ -268,6 +268,8 @@ Set `DATA_MODE=live` in `.env` and restart. No API keys are needed for NG.
 | News | Google News + Yahoo Finance RSS | |
 | Options | **No free source** | Shown simulated and labelled. In live mode, synthetic option levels are excluded from trade signals, the level ladder and the vol-divergence levels. Load a real chain CSV to use them |
 
+**Full list of sources, registration links and paid upgrades: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).**
+
 **DATA SOURCES panel.** The Nat Gas Desk opens with this panel. It shows every feed, its status (LIVE, SIM or ERROR) and how fresh it is.
 
 **Before selling the product.** Yahoo data is unofficial and not licensed for redistribution. Swap in a licensed CME feed (e.g. Databento) first, and check Open-Meteo's commercial terms.

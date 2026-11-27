@@ -61,7 +61,13 @@ function ngWeather() {
     <div class="legend"><span><i style="background:var(--muted)"></i>observed</span><span><i style="background:var(--s3)"></i>forecast</span><span><i style="background:var(--warn)"></i>normal (10-yr)</span></div>
     <div class="kv"><span>Next 7 days</span><span>${fx(w.next7.hdd, 0)} HDD vs ${fx(w.next7.normal, 0)} normal (${signed(w.next7.anomaly, 0)})</span>
       <span>Next 14 days</span><span>${fx(w.next14.hdd, 0)} vs ${fx(w.next14.normal, 0)} (${signed(w.next14.pct, 1)}%)</span>
-      <span>Cities</span><span class="muted">${w.cities.length} demand-weighted (${w.cities.slice(0, 4).join(", ")}…)</span></div></div>`;
+      <span>Cities</span><span class="muted">${w.cities.length} demand-weighted (${w.cities.slice(0, 4).join(", ")}…)</span></div>
+    ${w.models?.models ? `<div class="sec" style="margin-top:6px">MODEL RUNS <span class="muted">next 14 days, gas-weighted HDD · vs the same model's run 24 h earlier · ${esc(w.models.asof)}</span></div>
+      <table class="tbl"><thead><tr><th>MODEL</th><th>HDD</th><th>VS PREVIOUS RUN</th><th>READ</th></tr></thead><tbody>
+      ${Object.values(w.models.models).map((m) => `<tr><td class="sym">${esc(m.name)}</td><td>${fx(m.next14_hdd, 0)}</td><td class="${cls(m.chg_vs_prev_run)}">${signed(m.chg_vs_prev_run, 1)}</td>
+        <td>${m.chg_vs_prev_run == null ? "—" : m.chg_vs_prev_run >= 5 ? "colder run: bullish" : m.chg_vs_prev_run <= -5 ? "warmer run: bearish" : "little change"}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="muted">GFS updates 4×/day (00/06/12/18z), ECMWF 2×/day (00/12z). Prices often move on the run-to-run change, not the level.</div>` : ""}</div>`;
 }
 
 function ngCurve() {
@@ -159,6 +165,28 @@ function ngWeekly(wk) {
     <text x="${padL}" y="${H - 4}" font-size="9" style="fill:var(--muted)">${w[0].date}</text><text x="${W - 8}" y="${H - 4}" font-size="9" text-anchor="end" style="fill:var(--muted)">${w[w.length - 1].date}</text></svg>`;
 }
 
+function ngSpark(rows, key, col) {
+  if (!rows?.length) return "";
+  const W = 300, H = 60, v = rows.map((r) => r[key]), lo = Math.min(...v), hi = Math.max(...v), sp = hi - lo || 1;
+  return `<svg viewBox="0 0 ${W} ${H}" class="opt-svg" role="img" aria-label="Recent daily values"><polyline fill="none" stroke-width="2" style="stroke:${col}"
+    points="${v.map((x, i) => `${(i / (v.length - 1)) * (W - 4) + 2},${H - 4 - ((x - lo) / sp) * (H - 8)}`).join(" ")}"/></svg>`;
+}
+
+function ngDailyEia() {
+  const e = NGD.eia;
+  if (!e) return "";
+  const pb = e.power_burn || {}, hh = e.henry_hub || {};
+  const need = (x) => `<div class="muted">${esc(x.reason || "not available")}${x.register ? ` · <a href="${x.register}" target="_blank" rel="noopener">get a free EIA key</a> and set EIA_API_KEY in .env` : ""}</div>`;
+  return `<div class="dt-row dt-r2b">
+    <div><div class="sec">DAILY POWER BURN <span class="muted">${pb.available ? `EIA-930 gas-fired generation · ${esc(pb.conversion)}` : "EIA-930"}</span></div>
+      ${pb.available ? `<div class="kv"><span>Latest (${pb.last_date})</span><span><b>${fx(pb.last_bcfd, 1)} Bcf/d</b></span>
+        <span>7-day average</span><span>${fx(pb.avg7_bcfd, 1)} vs ${fx(pb.avg7_yago_bcfd, 1)} a year ago (<b class="${cls(pb.yoy_7d)}">${signed(pb.yoy_7d, 1)}</b>)</span></div>${ngSpark(pb.daily, "bcfd", "var(--s2)")}` : need(pb)}</div>
+    <div><div class="sec">HENRY HUB SPOT <span class="muted">${hh.available ? "EIA daily cash price" : "EIA"}</span></div>
+      ${hh.available ? `<div class="kv"><span>Spot (${hh.last_date})</span><span><b>$${fx(hh.last, 2)}</b> (${signed(hh.chg_1w, 2)} w/w)</span>
+        <span>Cash minus front futures</span><span class="${cls(hh.basis_vs_front)}">${signed(hh.basis_vs_front, 3)}</span></div>${ngSpark(hh.daily, "price", "var(--s1)")}
+        <div class="muted">Cash above futures = prompt tightness (physical buyers paying up).</div>` : need(hh)}</div></div>`;
+}
+
 function ngBalance() {
   const b = NGD.bal;
   if (!b) return "";
@@ -195,6 +223,7 @@ function ngBalance() {
       <div><div class="sec">WEEKLY: TIGHTER OR LOOSER THAN WEATHER? <span class="muted">${b.weekly?.available ? `last 4 reports ${signed(b.weekly.last4_bcfd, 2)} Bcf/d · ${esc(b.weekly.verdict)}` : ""}</span></div>${ngWeekly(b.weekly)}
         <div class="muted">Each bar: the EIA weekly storage change minus what that week's heating/cooling degree days normally produce (fitted on the past 3 years). Below zero = more gas left storage than weather explains: LNG, power or exports pulling harder, or production slipping.</div></div>
     </div>
+    ${ngDailyEia()}
     <div class="muted">${live ? "Monthly data: EIA Short-Term Energy Outlook (history + forecast, updated monthly). Weekly: computed from EIA storage and Open-Meteo weather." : "Simulated balance. Set DATA_MODE=live for EIA data."}
       Daily pipeline flows (LNG feedgas by terminal, daily production) need a paid vendor (Wood Mackenzie, LSEG, Criterion); the monthly LNG export figure is the free proxy.</div></div>`;
 }
@@ -202,7 +231,7 @@ function ngBalance() {
 function ngDataStatus() {
   const ds = NGD.ds;
   if (!ds) return "";
-  const col = { LIVE: "live", SIM: "sim", ERROR: "bad", NA: "sim" };
+  const col = { LIVE: "live", SIM: "sim", ERROR: "bad", NA: "sim", KEY: "sim" };
   return `<details class="box ng-ds" ${ds.mode !== "live" || ds.rows.some((r) => r.status === "ERROR") ? "open" : ""}><summary class="sec">DATA SOURCES <span class="muted">mode ${ds.mode.toUpperCase()} ·
       ${ds.rows.filter((r) => r.status === "LIVE").length}/${ds.rows.length} live${ds.rows.some((r) => r.status === "ERROR") ? ' · <span class="down">errors</span>' : ""} · click to expand</span></summary>
     <table class="tbl"><thead><tr><th>DATA</th><th>STATUS</th><th>SOURCE</th><th>DETAIL</th></tr></thead><tbody>
@@ -343,7 +372,8 @@ async function ngLoad() {
   [NGD.o, NGD.s, NGD.w, NGD.k, NGD.ins, NGD.dyn, NGD.opt, NGD.st] = await Promise.all([api("/api/natgas/outlook"), api("/api/natgas/seasonality"),
     api("/api/natgas/weather"), api("/api/natgas/contracts"), api("/api/snapshot/NG"), api("/api/natgas/dynamics"), api("/api/options/NG"),
     api("/api/natgas/storage").catch(() => null)]);
-  [NGD.ds, NGD.bal] = await Promise.all([api("/api/datastatus/NG").catch(() => null), api("/api/natgas/balance").catch(() => null)]);
+  [NGD.ds, NGD.bal, NGD.eia] = await Promise.all([api("/api/datastatus/NG").catch(() => null), api("/api/natgas/balance").catch(() => null),
+    api("/api/natgas/eia").catch(() => null)]);
 }
 function ngRender() {
   const v = $("#view");
