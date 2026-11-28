@@ -6,12 +6,13 @@ import contextlib
 import json
 import logging
 import math
+import os
 import time
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -23,8 +24,10 @@ from .config import settings
 from .data.store import MarketData
 from .news.service import NewsService
 from .tradesignals.manager import SignalManager
-from .prop.brokers import Order, PaperBroker, make_live_adapter
-from .prop.rules import PRESETS, PropAccount, PropRules
+from .accounts import auth as acct_auth, store as acct_store, tiers as acct_tiers
+from .accounts.workspace import Workspace
+from .prop.brokers import Order, make_live_adapter
+from .prop.rules import PRESETS, PropRules
 from .signals import fundamental
 from .signals.engine import SignalEngine
 
@@ -54,13 +57,30 @@ class Hub:
         self.alerts = AlertEngine()
         self.news = NewsService(settings)
         self.tsig = SignalManager(settings.cache_dir)
-        self.prop = PropAccount()
-        self.paper = PaperBroker(self.md.last, self._on_fill)
+        self.workspaces: dict[int, Workspace] = {}
         self.live_broker = make_live_adapter(settings)
-        self.clients: set[WebSocket] = set()
+        self.clients: dict[WebSocket, int] = {}            # socket -> user id
         self.tasks: list[asyncio.Task] = []
         self._day = date.today().isoformat()
-        self._prop_flags: set[str] = set()
+
+    # ------------------------------------------------------------------ per-user workspaces
+    def ws(self, uid: int = 0) -> Workspace:
+        w = self.workspaces.get(uid)
+        if w is None:
+            w = self.workspaces[uid] = Workspace(uid, self.md.last, acct_store.db_path().parent, self._ws_event)
+        return w
+
+    @property
+    def prop(self):                      # the local / default account (single-user mode, research defaults)
+        return self.ws(0).prop
+
+    @property
+    def paper(self):
+        return self.ws(0).paper
+
+    def _ws_event(self, w: Workspace, msg: dict) -> None:
+        with contextlib.suppress(RuntimeError):  # no running loop (e.g. unit tests)
+            asyncio.get_running_loop().create_task(self.send_user(w.uid, msg))
 
     # ------------------------------------------------------------------ lifecycle
     def boot(self) -> None:
@@ -81,13 +101,6 @@ class Hub:
                 rows[c.symbol] = {**rows[c.parent], "symbol": c.symbol, "name": c.name}
         return rows
 
-    def _on_fill(self, o: Order) -> None:
-        net = self.prop.on_fill(o.symbol, o.qty, o.fill_price, time.time(), tag=o.type)
-        pos = self.prop.positions.get(o.symbol)
-        if pos and pos.qty == 0:
-            self.paper.flatten_brackets(o.symbol)
-        self.queue({"type": "fill", "order": o.to_dict(), "realized": net})
-
     # ------------------------------------------------------------------ broadcasting
     def queue(self, msg: dict) -> None:
         with contextlib.suppress(RuntimeError):  # no running loop (e.g. unit tests)
@@ -104,7 +117,16 @@ class Hub:
             except Exception:  # noqa: BLE001
                 dead.append(ws)
         for ws in dead:
-            self.clients.discard(ws)
+            self.clients.pop(ws, None)
+
+    async def send_user(self, uid: int, msg: dict) -> None:
+        data = json.dumps(_clean(msg), default=str)
+        for ws, u in list(self.clients.items()):
+            if u == uid:
+                try:
+                    await ws.send_text(data)
+                except Exception:  # noqa: BLE001
+                    self.clients.pop(ws, None)
 
     # ------------------------------------------------------------------ loops
     async def tick_loop(self) -> None:
@@ -114,17 +136,26 @@ class Hub:
             try:
                 self.md.tick(dt)
                 prices = self.prices()
-                self.paper.on_prices(prices)
                 for ev in self.tsig.on_prices(prices):
                     await self.signal_event(ev)
                 today = date.today().isoformat()
-                if today != self._day:
-                    self.prop.end_of_day(prices, today)
-                    self._day = today
-                    self._prop_flags.clear()
-                self.prop.on_mark(prices)
+                new_day = today != self._day
+                self._day = today
+                for w in list(self.workspaces.values()):
+                    w.paper.on_prices(prices)
+                    if new_day:
+                        w.prop.end_of_day(prices, today)
+                        w.flags.clear()
+                        w.save()
+                    w.prop.on_mark(prices)
                 quotes = {s: self.md.quote(s) for s in universe.DATA_SYMBOLS}
-                await self.broadcast({"type": "tick", "quotes": quotes, "prop": self.prop_status_light()})
+                for ws, uid in list(self.clients.items()):
+                    try:
+                        await ws.send_text(json.dumps(_clean({"type": "tick", "quotes": quotes,
+                                                              "prop": self.ws(uid).light(prices) if uid >= 0 else None}),
+                                                   default=str))
+                    except Exception:  # noqa: BLE001
+                        self.clients.pop(ws, None)
             except Exception:  # noqa: BLE001
                 log.exception("tick loop error")
 
@@ -138,10 +169,15 @@ class Hub:
                 for ev in self.tsig.generate(self):
                     await self.signal_event(ev)
                 new = self.alerts.evaluate(self.engine.snapshots, rows)
-                new += self.prop_alerts()
                 await self.broadcast({"type": "signals", "rows": list(rows.values())})
                 for a in new:
-                    await self.broadcast({"type": "alert", "alert": a.to_dict()})
+                    if a.owner is None:
+                        await self.broadcast({"type": "alert", "alert": a.to_dict()})
+                    else:
+                        await self.send_user(a.owner, {"type": "alert", "alert": a.to_dict()})
+                for w in list(self.workspaces.values()):          # account alerts go to their owner only
+                    for a in self.prop_alerts(w):
+                        await self.send_user(w.uid, {"type": "alert", "alert": a})
             except Exception:  # noqa: BLE001
                 log.exception("signal loop error")
 
@@ -179,24 +215,20 @@ class Hub:
             except Exception:  # noqa: BLE001
                 log.exception("news loop error")
 
-    def prop_status_light(self) -> dict:
-        st = self.prop.status(self.prices())
-        st.pop("trades", None)
-        return st
+    def prop_status_light(self, uid: int = 0) -> dict:
+        return self.ws(uid).light(self.prices())
 
-    def prop_alerts(self):
-        st = self.prop.status(self.prices())
-        r = self.prop.rules
+    def prop_alerts(self, w: Workspace) -> list[dict]:
+        st = w.prop.status(self.prices())
+        r = w.prop.rules
         out = []
 
         def flag(key, sev, title, detail):
-            if key in self._prop_flags:
+            if key in w.flags:
                 return
-            self._prop_flags.add(key)
-            a = self.alerts.push_external("PROP", "PROP", sev, title, detail, key=f"prop:{key}:{self._day}",
-                                          cooldown=0)
-            if a:
-                out.append(a)
+            w.flags.add(key)
+            out.append({"id": f"prop:{w.uid}:{key}:{self._day}", "ts": time.time(), "symbol": "PROP", "category": "PROP",
+                        "severity": sev, "title": title, "detail": detail})
 
         if st["breached"]:
             flag("breach", "CRITICAL", "PROP ACCOUNT BREACHED", st["breached"])
@@ -234,6 +266,123 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Commodities Terminal API", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def auth_and_tiers(request: Request, call_next):
+    user = acct_auth.user_from(request.headers, request.cookies)
+    request.state.user = user
+    denied = acct_auth.gate(request.url.path, user)
+    if denied:
+        return JSONResponse(status_code=denied[0], content=denied[1])
+    return await call_next(request)
+
+
+def _user(request: Request) -> acct_store.User:
+    u = request.state.user
+    if u is None:
+        raise HTTPException(401, {"message": "Sign in to continue.", "signin": True})
+    return u
+
+
+def _ws(request: Request) -> Workspace:
+    return hub.ws(_user(request).id)
+
+
+class AuthIn(BaseModel):
+    email: str
+    password: str
+
+
+def _set_cookie(resp: Response, token: str) -> None:
+    resp.set_cookie(acct_auth.COOKIE, token, max_age=acct_store.SESSION_DAYS * 86400, httponly=True,
+                    samesite="lax", secure=os.getenv("COOKIE_SECURE", "auto") == "on")
+
+
+@app.post("/api/auth/signup")
+async def signup(body: AuthIn, response: Response):
+    if not acct_auth.auth_on():
+        raise HTTPException(400, "Accounts are off in local mode (AUTH_MODE=off).")
+    try:
+        u = acct_store.create_user(body.email, body.password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _set_cookie(response, acct_store.new_session(u.id))
+    return {"user": u.public()}
+
+
+@app.post("/api/auth/login")
+async def login(body: AuthIn, response: Response):
+    if not acct_auth.auth_on():
+        raise HTTPException(400, "Accounts are off in local mode (AUTH_MODE=off).")
+    u = acct_store.authenticate(body.email, body.password)
+    if u is None:
+        raise HTTPException(401, "Wrong email or password.")
+    _set_cookie(response, acct_store.new_session(u.id))
+    return {"user": u.public()}
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response):
+    acct_store.end_session(acct_auth.token_from(request.headers, request.cookies))
+    response.delete_cookie(acct_auth.COOKIE)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+async def me(request: Request):
+    u = request.state.user
+    tier = u.tier if u else "free"
+    return {"auth_mode": "on" if acct_auth.auth_on() else "off", "user": u.public() if u else None, "tier": tier,
+            "limits": acct_tiers.LIMITS[tier], "view_tiers": acct_tiers.VIEW_TIERS,
+            "locked_views": [v for v, t in acct_tiers.VIEW_TIERS.items() if not acct_tiers.allows(tier, t)]}
+
+
+@app.post("/api/billing/checkout")
+async def billing_checkout(request: Request, tier: str):
+    from .accounts import billing
+    u = _user(request)
+    if not acct_auth.auth_on():
+        raise HTTPException(400, "Billing is for the hosted version (AUTH_MODE=on).")
+    if not billing.configured():
+        raise HTTPException(503, "Payments are not set up yet (STRIPE_* settings).")
+    try:
+        return {"url": await asyncio.to_thread(billing.checkout_url, u, tier)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/billing/portal")
+async def billing_portal(request: Request):
+    from .accounts import billing
+    u = _user(request)
+    try:
+        return {"url": await asyncio.to_thread(billing.portal_url, u)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/billing/webhook")
+async def billing_webhook(request: Request):
+    from .accounts import billing
+    secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "STRIPE_WEBHOOK_SECRET not set")
+    payload = await request.body()
+    try:
+        event = billing.verify(payload, request.headers.get("stripe-signature", ""), secret)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    result = await asyncio.to_thread(billing.handle, event)
+    log.info("stripe webhook %s: %s", event.get("type"), result)
+    return {"ok": True, "result": result}
+
+
+@app.get("/api/plans")
+async def plans():
+    from .accounts import billing
+    return {"plans": acct_tiers.PLANS, "order": acct_tiers.TIERS, "limits": acct_tiers.LIMITS,
+            "billing": billing.configured()}
 
 
 def _sym(symbol: str) -> str:
@@ -678,28 +827,38 @@ class RuleIn(BaseModel):
 
 
 @app.get("/api/alerts")
-async def alerts(limit: int = 100):
-    return [a.to_dict() for a in list(hub.alerts.history)[:limit]]
+async def alerts(request: Request, limit: int = 100):
+    u = request.state.user
+    uid = u.id if u else -1
+    return [a.to_dict() for a in list(hub.alerts.history) if a.owner in (None, uid)][:limit]
 
 
 @app.get("/api/alerts/rules")
-async def rules():
-    return [r.__dict__ for r in hub.alerts.rules.values()]
+async def rules(request: Request):
+    uid = _user(request).id
+    return [r.__dict__ for r in hub.alerts.rules.values() if r.owner == uid]
 
 
 @app.post("/api/alerts/rules")
-async def add_rule(r: RuleIn):
+async def add_rule(r: RuleIn, request: Request):
+    u = _user(request)
     _sym(r.symbol)
+    mine = [x for x in hub.alerts.rules.values() if x.owner == u.id and x.active]
+    if len(mine) >= acct_tiers.LIMITS[u.tier]["alerts"]:
+        raise HTTPException(402, {"message": f"Your plan allows {acct_tiers.LIMITS[u.tier]['alerts']} active alert rules.",
+                                  "upgrade": "premium" if u.tier == "pro" else "ultimate"})
     try:
-        rule = hub.alerts.add_rule(UserRule(r.symbol.upper(), r.field, r.op, r.value, r.note, once=r.once))
+        rule = hub.alerts.add_rule(UserRule(r.symbol.upper(), r.field, r.op, r.value, r.note, once=r.once, owner=u.id))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return rule.__dict__
 
 
 @app.delete("/api/alerts/rules/{rule_id}")
-async def del_rule(rule_id: str):
-    hub.alerts.remove_rule(rule_id)
+async def del_rule(rule_id: str, request: Request):
+    r = hub.alerts.rules.get(rule_id)
+    if r is not None and r.owner == _user(request).id:
+        hub.alerts.remove_rule(rule_id)
     return {"ok": True}
 
 
@@ -728,8 +887,9 @@ class OrderIn(BaseModel):
 
 
 @app.get("/api/prop")
-async def prop_status():
-    return _clean(hub.prop.status(hub.prices()) | {"orders": hub.paper.account_snapshot()})
+async def prop_status(request: Request):
+    w = _ws(request)
+    return _clean(w.prop.status(hub.prices()) | {"orders": w.paper.account_snapshot()})
 
 
 @app.get("/api/prop/presets")
@@ -738,7 +898,7 @@ async def prop_presets():
 
 
 @app.post("/api/prop/rules")
-async def set_prop_rules(body: PropRulesIn):
+async def set_prop_rules(body: PropRulesIn, request: Request):
     if body.preset:
         if body.preset not in PRESETS:
             raise HTTPException(404, "unknown preset")
@@ -750,31 +910,38 @@ async def set_prop_rules(body: PropRulesIn):
             raise HTTPException(400, str(exc)) from exc
     else:
         raise HTTPException(400, "preset or rules required")
-    hub.prop.reset(rules)
-    hub._prop_flags.clear()
-    for oid in list(hub.paper.working):
-        hub.paper.cancel(oid)
-    return await prop_status()
+    w = _ws(request)
+    w.prop.reset(rules)
+    w.flags.clear()
+    for oid in list(w.paper.working):
+        w.paper.cancel(oid)
+    w.save()
+    return await prop_status(request)
 
 
 @app.post("/api/prop/reset")
-async def prop_reset():
-    hub.prop.reset()
-    hub._prop_flags.clear()
-    return await prop_status()
+async def prop_reset(request: Request):
+    w = _ws(request)
+    w.prop.reset()
+    w.flags.clear()
+    w.save()
+    return await prop_status(request)
 
 
 @app.post("/api/prop/size")
-async def prop_size(body: SizeIn):
-    return hub.prop.risk_size(_sym(body.symbol), body.stop_ticks, body.risk_pct, hub.prices())
+async def prop_size(body: SizeIn, request: Request):
+    return _ws(request).prop.risk_size(_sym(body.symbol), body.stop_ticks, body.risk_pct, hub.prices())
 
 
 @app.post("/api/orders")
-async def place_order(body: OrderIn):
+async def place_order(body: OrderIn, request: Request):
+    w = _ws(request)
     sym = _sym(body.symbol)
     qty = body.qty if body.side.upper() == "BUY" else -body.qty
-    check = hub.prop.pre_trade_check(sym, qty, body.stop_ticks, hub.prices())
+    check = w.prop.pre_trade_check(sym, qty, body.stop_ticks, hub.prices())
     if body.route == "live":
+        if acct_auth.auth_on():                    # hosted: live routing needs per-user broker links (Ultimate)
+            raise HTTPException(403, "Live routing in the hosted app is coming with broker linking (Ultimate).")
         if not hub.live_broker:
             raise HTTPException(403, "Live routing disabled. Set LIVE_TRADING_ENABLED=true and BROKER.")
         if not check["ok"]:
@@ -783,23 +950,25 @@ async def place_order(body: OrderIn):
         return {"order": o.to_dict(), "check": check}
     if not check["ok"] and not body.override:
         raise HTTPException(409, {"message": "Pre-trade risk check failed", **check})
-    o = hub.paper.place(Order(sym, qty, body.type.upper(), body.price, body.stop_ticks, body.target_ticks))
-    return _clean({"order": o.to_dict(), "check": check, "prop": hub.prop_status_light()})
+    o = w.paper.place(Order(sym, qty, body.type.upper(), body.price, body.stop_ticks, body.target_ticks))
+    w.save()
+    return _clean({"order": o.to_dict(), "check": check, "prop": w.light(hub.prices())})
 
 
 @app.delete("/api/orders/{order_id}")
-async def cancel_order(order_id: str):
-    hub.paper.cancel(order_id)
+async def cancel_order(order_id: str, request: Request):
+    _ws(request).paper.cancel(order_id)
     return {"ok": True}
 
 
 @app.post("/api/prop/flatten")
-async def flatten():
-    for sym, p in list(hub.prop.positions.items()):
-        hub.paper.flatten_brackets(sym)
+async def flatten(request: Request):
+    w = _ws(request)
+    for sym, p in list(w.prop.positions.items()):
+        w.paper.flatten_brackets(sym)
         if p.qty:
-            hub.paper.place(Order(sym, -p.qty))
-    return await prop_status()
+            w.paper.place(Order(sym, -p.qty))
+    return await prop_status(request)
 
 
 # ---------------------------------------------------------------------- backtest lab
@@ -881,20 +1050,22 @@ def bt_montecarlo(body: BacktestIn):
 # ---------------------------------------------------------------------- websocket & static
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
+    user = acct_auth.user_from(websocket.headers, websocket.cookies)
+    uid = user.id if user else -1                      # -1 = anonymous free-tier viewer
     await websocket.accept()
-    hub.clients.add(websocket)
+    hub.clients[websocket] = uid
     try:
         await websocket.send_text(json.dumps(_clean({
             "type": "hello", "rows": list(hub.rows().values()),
-            "alerts": [a.to_dict() for a in list(hub.alerts.history)[:100]],
-            "prop": hub.prop_status_light(), "data_mode": settings.data_mode,
+            "alerts": [a.to_dict() for a in list(hub.alerts.history) if a.owner in (None, uid)][:100],
+            "prop": hub.prop_status_light(uid) if uid >= 0 else None, "data_mode": settings.data_mode,
         }), default=str))
         while True:
             await websocket.receive_text()  # keepalive / ignore client messages
     except WebSocketDisconnect:
         pass
     finally:
-        hub.clients.discard(websocket)
+        hub.clients.pop(websocket, None)
 
 
 if FRONTEND.exists():

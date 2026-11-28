@@ -432,7 +432,7 @@ const VIEWS = {
   async ALRT(v) {
     setTitle("ALERTS · BUILT-IN TRIGGERS + CUSTOM RULES");
     tools("");
-    const rules = await api("/api/alerts/rules");
+    const rules = await api("/api/alerts/rules").catch(() => []);
     const fields = ["last", "chg_pct", "swing", "day", "trend", "cot_index", "sd_z", "p_up_5d"];
     v.innerHTML = `<div class="cols"><div class="box"><div class="sec">NEW RULE</div>
       <div class="form">
@@ -481,7 +481,7 @@ const VIEWS = {
 async function renderView() {
   destroyCharts();
   document.querySelectorAll("#fkeys button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.view));
-  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS", "NGD", "OPT", "GS", "LX"].includes(S.view)); // these use the detail column too
+  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS", "NGD", "OPT", "GS", "LX", "PLANS"].includes(S.view)); // these use the detail column too
   const v = $("#view");
   v.innerHTML = "";
   try {
@@ -574,7 +574,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS", NGD: "NGD", GAS: "NGD", NATGAS: "NGD", OPT: "OPT", OPTIONS: "OPT", GEX: "OPT", GS: "GS", SCALP: "GS", GAMMA: "GS", LX: "LX", LEVELS: "LX", SIGMA: "LX", FADE: "LX" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS", NGD: "NGD", GAS: "NGD", NATGAS: "NGD", OPT: "OPT", OPTIONS: "OPT", GEX: "OPT", GS: "GS", SCALP: "GS", GAMMA: "GS", LX: "LX", LEVELS: "LX", SIGMA: "LX", FADE: "LX", PLANS: "PLANS", ACCOUNT: "PLANS", BILLING: "PLANS" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);

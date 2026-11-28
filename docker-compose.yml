@@ -1,0 +1,34 @@
+# Production-style stack on one VPS: the terminal behind Caddy (automatic HTTPS).
+#   1. Point your domain's DNS A record at the server.
+#   2. cp .env.example .env  and fill in PUBLIC_URL, Stripe and data keys.
+#   3. DOMAIN=desk.example.com docker compose up -d
+services:
+  terminal:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AUTH_MODE: "on"
+      COOKIE_SECURE: "on"
+      CACHE_DIR: /data/cache
+      DATABASE_PATH: /data/app.db
+    volumes:
+      - terminal-data:/data
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN} --to terminal:8000
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - terminal
+
+volumes:
+  terminal-data:
+  caddy-data:

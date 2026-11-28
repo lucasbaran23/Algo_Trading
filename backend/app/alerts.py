@@ -19,6 +19,7 @@ class Alert:
     severity: str    # INFO / WARN / CRITICAL
     title: str
     detail: str
+    owner: int | None = None        # user id for personal (rule) alerts; None = market-wide
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -39,6 +40,7 @@ class UserRule:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     once: bool = True
     active: bool = True
+    owner: int = 0                  # user id (0 = local owner)
 
 
 OPS = {">": lambda a, b: a > b, "<": lambda a, b: a < b, ">=": lambda a, b: a >= b, "<=": lambda a, b: a <= b}
@@ -168,6 +170,8 @@ class AlertEngine:
                 a = self._fire(f"user:{rule.id}", rule.symbol, "USER", "CRITICAL",
                                f"{rule.symbol} {rule.field} {rule.op} {rule.value}",
                                f"Now {row[rule.field]}. {rule.note}".strip(), cooldown=300)
+                if a:
+                    a.owner = rule.owner
                 if a:
                     new.append(a)
                     if rule.once:

@@ -1,0 +1,9 @@
+.git
+.env
+**/__pycache__
+**/.pytest_cache
+backend/.cache
+backend/.data
+backend/data/intraday/*.csv
+backend/data/options/*.csv
+docs/screenshots

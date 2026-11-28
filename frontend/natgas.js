@@ -370,7 +370,7 @@ function ngOptions() {
 // ------------------------------------------------------------------ view
 async function ngLoad() {
   [NGD.o, NGD.s, NGD.w, NGD.k, NGD.ins, NGD.dyn, NGD.opt, NGD.st] = await Promise.all([api("/api/natgas/outlook"), api("/api/natgas/seasonality"),
-    api("/api/natgas/weather"), api("/api/natgas/contracts"), api("/api/snapshot/NG"), api("/api/natgas/dynamics"), api("/api/options/NG"),
+    api("/api/natgas/weather"), api("/api/natgas/contracts"), api("/api/snapshot/NG"), api("/api/natgas/dynamics"), api("/api/options/NG").catch(() => null),
     api("/api/natgas/storage").catch(() => null)]);
   [NGD.ds, NGD.bal, NGD.eia] = await Promise.all([api("/api/datastatus/NG").catch(() => null), api("/api/natgas/balance").catch(() => null),
     api("/api/natgas/eia").catch(() => null)]);

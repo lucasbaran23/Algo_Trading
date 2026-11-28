@@ -26,6 +26,9 @@ cp .env.example .env          # optional: DATA_MODE=live and an EIA key
 
 Run the tests with `cd backend && python -m pytest -q`.
 
+**Hosting it for customers** (accounts, Free/Pro/Premium/Ultimate plans, Stripe, Docker, HTTPS): see
+[docs/DEPLOY.md](docs/DEPLOY.md). Locally nothing changes: `AUTH_MODE=off` keeps everything unlocked.
+
 `DATA_MODE=sim` (the default) runs fully offline on deterministic simulated data, and every panel shows
 **SIM** source badges. `DATA_MODE=live` pulls real data and falls back to sim **per source** if a feed fails:
 
