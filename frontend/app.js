@@ -481,7 +481,7 @@ const VIEWS = {
 async function renderView() {
   destroyCharts();
   document.querySelectorAll("#fkeys button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.view));
-  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS", "NGD", "OPT", "GS", "LX", "PLANS"].includes(S.view)); // these use the detail column too
+  document.body.classList.toggle("wide", ["BT", "DT", "IR", "TS", "NGD", "OPT", "GS", "LX", "PLANS", "COP"].includes(S.view)); // these use the detail column too
   const v = $("#view");
   v.innerHTML = "";
   try {
@@ -574,7 +574,7 @@ function renderAlerts() {
 async function runCommand(raw) {
   const parts = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
-  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS", NGD: "NGD", GAS: "NGD", NATGAS: "NGD", OPT: "OPT", OPTIONS: "OPT", GEX: "OPT", GS: "GS", SCALP: "GS", GAMMA: "GS", LX: "LX", LEVELS: "LX", SIGMA: "LX", FADE: "LX", PLANS: "PLANS", ACCOUNT: "PLANS", BILLING: "PLANS" };
+  const views = { MON: "MON", COT: "COT", SD: "SD", "S&D": "SD", FCST: "FCST", SIG: "SIG", PROP: "PROP", ALRT: "ALRT", HELP: "HELP", BT: "BT", BACKTEST: "BT", NEWS: "NEWS", N: "NEWS", DT: "DT", INSIDER: "DT", IR: "IR", RESEARCH: "IR", TS: "TS", TRADES: "TS", SIGNALS: "TS", NGD: "NGD", GAS: "NGD", NATGAS: "NGD", OPT: "OPT", OPTIONS: "OPT", GEX: "OPT", GS: "GS", SCALP: "GS", GAMMA: "GS", LX: "LX", LEVELS: "LX", SIGMA: "LX", FADE: "LX", PLANS: "PLANS", ACCOUNT: "PLANS", BILLING: "PLANS", COP: "COP", COPILOT: "COP", AI: "COP" };
   const [a, b, c, d, e] = parts;
   if (a === "BUY" || a === "SELL") {
     const qty = parseInt(b, 10);

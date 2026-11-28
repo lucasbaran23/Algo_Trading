@@ -488,10 +488,10 @@ async def sd_table():
 
 # ---------------------------------------------------------------------- day-trade insider
 @app.get("/api/insider/{symbol}")
-def insider(symbol: str):
+def insider(symbol: str, request: Request):
     """Pre-session briefing for one market. Plain def: the first call per market backtests the playbook."""
     from .daytrade import insider as dt
-    return _clean(dt.build(hub, _sym(symbol)))
+    return _clean(dt.build(hub, _sym(symbol), _ws(request).prop))
 
 
 # ---------------------------------------------------------------------- intraday research & top-down
@@ -654,6 +654,100 @@ def natgas_eia():
         fut = float(hub.md.sessions["NG"].last)
         out["henry_hub"]["basis_vs_front"] = round(hh["last"] - fut, 3)
     return _clean(out)
+
+
+# ---------------------------------------------------------------------- prop copilot (premium)
+_COPILOT = None
+
+
+def _copilot():
+    global _COPILOT
+    if _COPILOT is None:
+        from .copilot.agent import Copilot
+        _COPILOT = Copilot()
+    return _COPILOT
+
+
+def _copilot_quota(u) -> dict:
+    period = date.today().strftime("%Y-%m")
+    limit = acct_tiers.LIMITS[u.tier]["copilot_month"] if acct_auth.auth_on() else None
+    used = acct_store.usage(u.id, "copilot", period) if acct_auth.auth_on() else 0
+    return {"period": period, "used": used, "limit": limit, "remaining": None if limit is None else max(0, limit - used)}
+
+
+@app.get("/api/copilot/state")
+async def copilot_state(request: Request):
+    from .copilot import tools as T
+    u, w = _user(request), _ws(request)
+    has_key = bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
+    return _clean({"firms": T.firm_rules()["firms"], "account": T.account_status(hub, w), "quota": _copilot_quota(u),
+                   "ai_configured": has_key, "model": os.getenv("COPILOT_MODEL", "claude-opus-5-5")})
+
+
+@app.get("/api/copilot/plan")
+def copilot_plan(request: Request, symbols: str = "NG"):
+    """The deterministic daily risk plan (no AI call, no quota)."""
+    from .copilot import tools as T
+    syms = [_sym(x) for x in symbols.split(",") if x.strip()][:4]
+    return _clean(T.daily_plan(hub, _ws(request), syms))
+
+
+class FirmIn(BaseModel):
+    firm: str
+    plan: str
+
+
+@app.post("/api/copilot/firm")
+async def copilot_firm(body: FirmIn, request: Request):
+    from .copilot import tools as T
+    try:
+        rules = T.rules_for(body.firm, body.plan)
+    except KeyError as exc:
+        raise HTTPException(404, f"unknown firm/plan: {exc}") from exc
+    w = _ws(request)
+    w.prop.reset(rules)
+    w.flags.clear()
+    w.save()
+    return _clean({"ok": True, "rules": rules.to_dict(), "verified": T.firms()[body.firm]["plans"][body.plan].get("verified", False)})
+
+
+class AskIn(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+
+
+@app.post("/api/copilot/chat")
+async def copilot_chat(body: AskIn, request: Request):
+    import anthropic
+    u, w = _user(request), _ws(request)
+    q = _copilot_quota(u)
+    if q["remaining"] is not None and q["remaining"] <= 0:
+        raise HTTPException(402, {"message": f"You've used this month's {q['limit']} Copilot questions.",
+                                  "upgrade": "ultimate" if u.tier != "ultimate" else None})
+    try:
+        res = await asyncio.to_thread(_copilot().ask, hub, w, u.id, body.message.strip())
+    except anthropic.AuthenticationError as exc:
+        raise HTTPException(503, "The Copilot isn't set up on this server: add ANTHROPIC_API_KEY to .env and restart.") from exc
+    except TypeError as exc:                     # the SDK found no credentials at all
+        if "authentication" not in str(exc).lower():
+            raise
+        raise HTTPException(503, "The Copilot isn't set up on this server: add ANTHROPIC_API_KEY to .env and restart.") from exc
+    except anthropic.RateLimitError as exc:
+        raise HTTPException(429, "The AI service is busy. Try again in a minute.") from exc
+    except (anthropic.APIConnectionError, anthropic.InternalServerError) as exc:
+        raise HTTPException(503, "Couldn't reach the AI service. Try again shortly.") from exc
+    except anthropic.APIStatusError as exc:
+        log.warning("copilot API error %s: %s", exc.status_code, exc.message)
+        raise HTTPException(502, f"AI service error ({exc.status_code}).") from exc
+    if acct_auth.auth_on():
+        acct_store.add_usage(u.id, "copilot", q["period"])
+    res["quota"] = _copilot_quota(u)
+    return _clean(res)
+
+
+@app.post("/api/copilot/reset")
+async def copilot_reset(request: Request):
+    _copilot().reset(_user(request).id)
+    return {"ok": True}
 
 
 @app.get("/api/datastatus/{symbol}")

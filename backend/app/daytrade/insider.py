@@ -58,7 +58,8 @@ def _bt(sym: str, df: pd.DataFrame, c, cost: float) -> dict:
     return res
 
 
-def build(hub, symbol: str) -> dict:
+def build(hub, symbol: str, account=None) -> dict:
+    acct = account if account is not None else hub.prop     # whose prop account sizes the plan
     c = universe.get(symbol)
     sym = c.data_symbol
     md, snap = hub.md, hub.engine.snapshots[sym]
@@ -140,7 +141,7 @@ def build(hub, symbol: str) -> dict:
     s_near = below[0] if below else None
 
     # ------------------------------------------------------------------ playbook
-    cost = hub.prop.rules.commission_per_side
+    cost = acct.rules.commission_per_side
     bt = _bt(sym, df, c, cost)
     ranked = playbook.rank(bt, reg["kind"], tv)
     x = playbook._ctx(df.iloc[:-1].reset_index(drop=True))
@@ -178,8 +179,8 @@ def build(hub, symbol: str) -> dict:
     if rng["adr_used_pct"] >= 100:
         why.append(f"Today has already traded {rng['adr_used_pct']:.0f}% of its average range: late-day continuation odds drop, so favour mean reversion")
     stop_ticks = max(4, int(round(0.25 * rng["adr20"] / tick)))
-    st = hub.prop.status(hub.prices())
-    r = hub.prop.rules
+    st = acct.status(hub.prices())
+    r = acct.rules
     budgets = [st["distance_to_breach"] * 0.15]
     if st["daily_loss_remaining"] is not None:
         budgets.append(st["daily_loss_remaining"] * 0.25)

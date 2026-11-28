@@ -254,6 +254,32 @@ Options levels also feed the Insider's level ladder and game plan.
 * ES/NQ in live mode: CBOE's free delayed SPX/NDX chains, scaled to the futures.
 * Otherwise a labelled simulated chain with the right skew sign: NG winter call skew, index put skew.
 
+## Prop Copilot (`COP`, Premium)
+![Prop Copilot](docs/screenshots/64-prop-copilot.png)
+
+A risk assistant for prop-firm traders. The rule of the design: **code computes, the AI explains.** Every dollar
+figure, contract count, buffer and probability comes from deterministic tools; Claude decides which tools to call,
+combines the results and explains them in plain words.
+
+| Tool | What it does |
+|---|---|
+| Account status | Equity, drawdown threshold and buffer, daily loss left, consistency, open positions, rules |
+| Firm rules | Templates for Topstep, Apex, Take Profit Trader, MyFundedFutures, FTMO (`backend/data/firms.json`, marked unverified until checked) |
+| Market brief | Ranges, volatility percentile, regime, levels, scheduled reports, news, positioning, volatility-adjusted risk template |
+| Size position | Contracts and micros so a stop-out costs a set % of the remaining buffer |
+| Check trade | Max contracts, worst-case loss vs drawdown buffer and daily loss left |
+| Daily risk plan | Day loss budget, per-market stop, risk per trade, contracts, events to avoid, consistency cap |
+| Pass odds | Monte Carlo of the evaluation from the current account state under its own rules |
+
+* **Today's risk plan:** the screen shows it without calling the AI, so it has no AI cost and no quota.
+* **The chat:** uses `ANTHROPIC_API_KEY`, `COPILOT_MODEL` (default Claude Opus 5.5) and `COPILOT_EFFORT` (default
+  medium). It runs on the Messages API tool runner inside the server, because the tools read live in-process state.
+* **Refusal fallbacks:** server-side `fallbacks: "default"`, so if the model declines a request, the API retries it
+  on a fallback model in the same call.
+* **Question limits:** Premium gets 200 questions a month and Ultimate 1,000 (hosted mode only; local is unlimited).
+* **Framing:** the copilot is framed as educational risk analysis on the trader's own settings. It never places
+  orders. See the regulatory note in `docs/DEPLOY.md`.
+
 ## Live data for natural gas (`DATA_MODE=live`)
 
 Set `DATA_MODE=live` in `.env` and restart. No API keys are needed for NG.

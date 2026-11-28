@@ -1,0 +1,62 @@
+{
+  "_readme": "Prop-firm rule templates for the Copilot. Firms change rules often: every plan is marked verified=false until you check it against the firm's help center (source) and set verified=true with the date. The user's own configured account on the Prop desk is always the source of truth for numbers.",
+  "firms": {
+    "topstep": {
+      "name": "Topstep", "asset_class": "futures", "source": "https://help.topstep.com",
+      "general": [
+        "Trading must be flat by the firm's session cut-off (historically 3:10 pm CT / 4:10 pm ET) on futures.",
+        "Consistency target on the evaluation: the best day should stay under about 50% of the profit target.",
+        "Check the current news-trading and automation policy in the help center before trading around major releases."
+      ],
+      "plans": {
+        "50K": {"account_size": 50000, "profit_target": 3000, "max_drawdown": 2000, "drawdown_mode": "trailing_eod", "daily_loss_limit": null, "max_contracts": 5, "consistency_pct": 50, "min_trading_days": 2, "verified": false},
+        "100K": {"account_size": 100000, "profit_target": 6000, "max_drawdown": 3000, "drawdown_mode": "trailing_eod", "daily_loss_limit": null, "max_contracts": 10, "consistency_pct": 50, "min_trading_days": 2, "verified": false},
+        "150K": {"account_size": 150000, "profit_target": 9000, "max_drawdown": 4500, "drawdown_mode": "trailing_eod", "daily_loss_limit": null, "max_contracts": 15, "consistency_pct": 50, "min_trading_days": 2, "verified": false}
+      }
+    },
+    "apex": {
+      "name": "Apex Trader Funding", "asset_class": "futures", "source": "https://support.apextraderfunding.com",
+      "general": [
+        "Evaluation drawdown has historically trailed intraday on unrealized highs: open profits raise the threshold.",
+        "Funded (PA) accounts carry consistency and payout rules; check the current version.",
+        "Positions must be closed before the daily session cut-off."
+      ],
+      "plans": {
+        "50K": {"account_size": 50000, "profit_target": 3000, "max_drawdown": 2500, "drawdown_mode": "trailing_intraday", "daily_loss_limit": null, "max_contracts": 10, "consistency_pct": null, "min_trading_days": 1, "verified": false},
+        "100K": {"account_size": 100000, "profit_target": 6000, "max_drawdown": 3000, "drawdown_mode": "trailing_intraday", "daily_loss_limit": null, "max_contracts": 14, "consistency_pct": null, "min_trading_days": 1, "verified": false},
+        "150K": {"account_size": 150000, "profit_target": 9000, "max_drawdown": 5000, "drawdown_mode": "trailing_intraday", "daily_loss_limit": null, "max_contracts": 17, "consistency_pct": null, "min_trading_days": 1, "verified": false}
+      }
+    },
+    "takeprofittrader": {
+      "name": "Take Profit Trader", "asset_class": "futures", "source": "https://takeprofittrader.com/faq",
+      "general": [
+        "End-of-day trailing drawdown on the test; consistency rule on the best day.",
+        "Check news-trading restrictions for the funded (PRO) stage."
+      ],
+      "plans": {
+        "50K": {"account_size": 50000, "profit_target": 3000, "max_drawdown": 2000, "drawdown_mode": "trailing_eod", "daily_loss_limit": 1100, "max_contracts": 6, "consistency_pct": 50, "min_trading_days": 5, "verified": false},
+        "100K": {"account_size": 100000, "profit_target": 6000, "max_drawdown": 3000, "drawdown_mode": "trailing_eod", "daily_loss_limit": 2200, "max_contracts": 12, "consistency_pct": 50, "min_trading_days": 5, "verified": false}
+      }
+    },
+    "myfundedfutures": {
+      "name": "MyFundedFutures", "asset_class": "futures", "source": "https://help.myfundedfutures.com",
+      "general": [
+        "End-of-day trailing drawdown on most plans; consistency applies on some plans.",
+        "Several plan families exist (e.g. starter / expert); match your exact plan."
+      ],
+      "plans": {
+        "50K": {"account_size": 50000, "profit_target": 3000, "max_drawdown": 2000, "drawdown_mode": "trailing_eod", "daily_loss_limit": null, "max_contracts": 5, "consistency_pct": 50, "min_trading_days": 2, "verified": false}
+      }
+    },
+    "ftmo": {
+      "name": "FTMO", "asset_class": "fx_cfd", "source": "https://ftmo.com/en/faq/",
+      "general": [
+        "FX/CFD firm: limits are a static maximum loss and a daily loss measured from the day's starting equity.",
+        "Contract sizing on futures does not apply; use the % rules on the platform's lot sizes."
+      ],
+      "plans": {
+        "100K": {"account_size": 100000, "profit_target": 10000, "max_drawdown": 10000, "drawdown_mode": "static", "daily_loss_limit": 5000, "max_contracts": 10, "consistency_pct": null, "min_trading_days": 4, "verified": false}
+      }
+    }
+  }
+}
